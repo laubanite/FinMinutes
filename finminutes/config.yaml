@@ -12,14 +12,14 @@ llm_providers:
     provider: "deepseek"
     api_key: "${DEEPSEEK_API_KEY}"
     base_url: "https://api.deepseek.com/v1"
-    model: "deepseek-chat"
+    model: "deepseek-v4-flash"
     description: "低成本付费（约 1 元/百万 token），备选"
 
   openai:
     provider: "openai"
     api_key: "${OPENAI_API_KEY}"
     base_url: "https://api.openai.com/v1"
-    model: "gpt-4o"
+    model: "gpt-5.6-luna"
     description: "付费，高性能"
 
   ollama:
