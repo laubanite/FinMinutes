@@ -1,0 +1,11 @@
+# 校验稿渲染模板 — 系统内置，不可修改
+name: "review_default"
+description: "校验稿渲染格式（纯 Q&A）"
+
+title: "校验稿"
+
+qa:
+  section_title: "Q&A"
+  timestamp_format: "[{timerange}]"
+  question_prefix: "**Q**："
+  answer_prefix: "**A**："

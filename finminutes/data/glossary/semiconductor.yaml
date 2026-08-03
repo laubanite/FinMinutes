@@ -1,0 +1,63 @@
+industry: 半导体与存储
+terms:
+- term: 4F²
+  context: 一种先进的DRAM制程架构，具有更高的晶体管密度和面积效率。
+  corrections:
+  - 4F2
+  - 4F2架构
+  - 4F平方
+- term: HBM
+  context: 高带宽内存，一种通过堆叠DRAM芯片来提高数据传输速率的存储技术。
+  corrections:
+  - HBM2E
+  - HBM3E
+  - HBM内存
+  - 高带宽存储
+- term: 热压键合
+  context: 一种通过加热和压力将芯片层进行连接的堆叠封装工艺。
+  corrections:
+  - 热压键合工艺
+  - 热压焊接
+  - 热压件合
+- term: 混合键合
+  context: 一种先进的芯片堆叠技术，通过铜柱直接连接实现更小的间距和更高的互连密度。
+  corrections:
+  - 混和键合
+  - 混合键合工艺
+  - 混和件合
+- term: Wafer to wafer
+  context: 晶圆对晶圆键合工艺，指将两片完整的晶圆直接进行对准和连接的工艺。
+  corrections:
+  - Wafer to Wafer
+  - 晶圆对晶圆
+  - Wafer to Wafre
+- term: 3D异构集成
+  context: 通过在垂直方向堆叠不同功能的芯片或器件来实现高度集成的制造技术。
+  corrections:
+  - 3D异构集成技术
+  - 3D异构集成方案
+  - 3D异构集成性能
+- term: EUV
+  context: 极紫外光刻技术，是制造先进制程芯片的核心光刻技术。
+  corrections:
+  - EUV光刻
+  - EUV技术
+  - EUV光刻机
+- term: 乙硼烷
+  context: 一种半导体制造中用于离子注入掺杂的重要特种化学气体。
+  corrections:
+  - 乙硼烷气体
+  - 乙硼烷剂
+  - 乙硼烷化学品
+- term: 六氟化钨
+  context: 半导体刻蚀工艺中常用的一种特种气体。
+  corrections:
+  - 六氟化钨气体
+  - 六氟化钨化学品
+  - 六氟化钨工艺
+- term: 存算一体
+  context: 一种新型计算架构，将存储功能与计算功能集成在同一个存储单元中。
+  corrections:
+  - 存储计算一体化
+  - 存算一体化
+  - 存算一体技术

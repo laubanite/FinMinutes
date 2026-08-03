@@ -1,0 +1,7 @@
+name: "default"
+description: "默认成品稿模板"
+sections:
+  - title: "总结"
+    prompt: "从问答中提炼核心结论，分点列出。"
+  - title: "Q&A"
+    prompt: "将所有 Q&A 按主题分组展示，每个主题下包含相关问答。语言保持书面化，不改变原意。"

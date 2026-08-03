@@ -1,0 +1,43 @@
+# ---- 测试产物 ----
+test_run/
+需求文档/
+
+# ---- 敏感配置 ----
+finminutes/data/backgrounds/cx_bg.yaml
+.env
+*.env
+!*.env.example
+
+# ---- Python 缓存 ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# ---- 测试缓存 ----
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---- 日志 ----
+*.log
+
+# ---- 本地用户配置 ----
+~/.finminutes/
+.finminutes/
+config.yaml.bak
+
+# ---- IDE / 系统 ----
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# ---- 临时文件 ----
+*.tmp
+*.bak
+*~
