@@ -93,11 +93,11 @@ class TaskManager:
     ):
         self._update(task_id, status="running", progress="正在预处理...")
         pipeline = Pipeline(self._config)
+        # 注意：pipeline.run 不接受 template_name（成品稿模板属于 render 步骤，非流水线概念）
         result = pipeline.run(
             transcript=transcript,
             background_path=background_path,
             glossary_tag=glossary_tag,
-            template_name=template_name,
             mode=mode,
         )
 

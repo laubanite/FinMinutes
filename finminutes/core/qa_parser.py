@@ -159,6 +159,8 @@ def _parse_heuristic(text: str) -> list[dict]:
         question = lines[0]
         if len(question) < 4:
             continue
+        if question.lstrip().startswith("#"):
+            continue  # 跳过 markdown 标题（如「## 主题要点」下的章节标题）
         label = question.split("：")[0].split(":")[0]
         if re.match(r"^([A-Za-z\u4e00-\u9fff])\1+$", label):
             continue

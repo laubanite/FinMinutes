@@ -1,6 +1,6 @@
-from finminutes.core.fact_checker import CitationCheck, FactCheckReport, NumericAnomaly, UnsupportedClaim
+from finminutes.core.fact_checker import CitationCheck, CoverageReport, FactCheckReport, UnsupportedClaim
 from finminutes.core.renderer import MarkdownRenderer
-from finminutes.core.summarizer import QAPair, SectionContent, StructuredMinutes, Takeaway
+from finminutes.core.summarizer import QAPair, SectionContent, StructuredMinutes
 
 
 class TestRenderSections:
@@ -89,43 +89,6 @@ class TestRenderQA:
         assert "Q&A" not in result
 
 
-class TestRenderTakeaways:
-    def test_takeaways_rendered(self):
-        minutes = StructuredMinutes(
-            takeaways=[Takeaway(content="增长良好", type="事实")],
-        )
-        r = MarkdownRenderer(minutes)
-        result = r.render()
-        assert "## 核心要点" in result
-        assert "[事实] 增长良好" in result
-
-    def test_multiple_takeaways(self):
-        minutes = StructuredMinutes(
-            takeaways=[
-                Takeaway(content="事实1", type="事实"),
-                Takeaway(content="推断1", type="推断"),
-            ],
-        )
-        r = MarkdownRenderer(minutes)
-        result = r.render()
-        assert "[事实] 事实1" in result
-        assert "[推断] 推断1" in result
-
-    def test_empty_takeaway_skipped(self):
-        minutes = StructuredMinutes(
-            takeaways=[Takeaway(content="")],
-        )
-        r = MarkdownRenderer(minutes)
-        result = r.render()
-        assert "## 核心要点" in result
-
-    def test_no_takeaways_omits_section(self):
-        minutes = StructuredMinutes()
-        r = MarkdownRenderer(minutes)
-        result = r.render()
-        assert "核心要点" not in result
-
-
 class TestRenderValidationReport:
     def test_report_not_included_when_none(self):
         minutes = StructuredMinutes(sections=[SectionContent(title="S", content="C")])
@@ -142,19 +105,18 @@ class TestRenderValidationReport:
         assert "[通过]" in result
         assert "100%" in result
 
-    def test_report_with_anomalies(self):
+    def test_report_with_coverage_warning(self):
         minutes = StructuredMinutes()
         report = FactCheckReport(
             sections_checked=1,
             citation_checks=[CitationCheck(citation="L1", line_index=1, valid=True)],
-            numeric_anomalies=[
-                NumericAnomaly(value_in_minutes="100", title="S1", citation="L1"),
-            ],
+            coverage=CoverageReport(total_chunks=10, uncovered_chunks=6, ratio=0.4),
         )
         r = MarkdownRenderer(minutes, report=report)
         result = r.render()
         assert "[异常]" in result
-        assert "100" in result
+        assert "内容覆盖率" in result
+        assert "40%" in result
         assert "L1" in result
 
     def test_report_with_invalid_citation(self):
@@ -182,7 +144,7 @@ class TestRenderValidationReport:
 
     def test_report_confidence_score_displayed(self):
         minutes = StructuredMinutes()
-        report = FactCheckReport(sections_checked=2, takeaways_checked=1)
+        report = FactCheckReport(sections_checked=2)
         r = MarkdownRenderer(minutes, report=report)
         result = r.render()
         assert "100%" in result
@@ -208,12 +170,10 @@ class TestFullRendering:
                 SectionContent(title="概况", content="2024年营收300亿", citations=["L1"]),
             ],
             qa_pairs=[QAPair(question="增长如何？", answer="良好", asker="王")],
-            takeaways=[Takeaway(content="营收增长", type="事实")],
         )
         report = FactCheckReport(
             sections_checked=1,
             qa_pairs_checked=1,
-            takeaways_checked=1,
             citation_checks=[CitationCheck(citation="L1", line_index=1, content="2024年营收300亿", valid=True)],
         )
         r = MarkdownRenderer(minutes, report=report)
@@ -222,7 +182,6 @@ class TestFullRendering:
         assert "# 会议纪要" in result
         assert "## 1. 概况" in result
         assert "## Q&A 环节" in result
-        assert "## 核心要点" in result
         assert "## 事实校验报告" in result
 
     def test_no_report_sections_only(self):

@@ -16,9 +16,6 @@ class MarkdownRenderer:
         if self._minutes.qa_pairs:
             parts.append(self._render_qa_section())
 
-        if self._minutes.takeaways:
-            parts.append(self._render_takeaways())
-
         if self._report is not None:
             parts.append(self._render_validation_report())
 
@@ -45,23 +42,22 @@ class MarkdownRenderer:
             lines.append("")
         return "\n".join(lines)
 
-    def _render_takeaways(self) -> str:
-        lines = ["---", "", "## 核心要点", ""]
-        for t in self._minutes.takeaways:
-            if t.content:
-                lines.append(f"- [{t.type}] {t.content}")
-        lines.append("")
-        return "\n".join(lines)
-
     def _render_validation_report(self) -> str:
         r = self._report
         lines = ["---", "", "## 事实校验报告", ""]
 
-        score_pct = f"{r.confidence_score * 100:.0f}%"
         status = "[通过]" if r.verified_overall else "[异常]"
         lines.append(f"- **校验状态**：{status}")
-        lines.append(f"- **置信度**：{score_pct}")
-        lines.append(f"- 共检查 {r.sections_checked} 个章节、{r.qa_pairs_checked} 个问答、{r.takeaways_checked} 个要点")
+        if r.coverage is not None:
+            covered = r.coverage.total_chunks - r.coverage.uncovered_chunks
+            lines.append(f"- **内容覆盖率**：{r.coverage.ratio * 100:.0f}%（{covered}/{r.coverage.total_chunks} 段被提取内容覆盖）")
+            if not r.coverage.ok:
+                lines.append(f"- ⚠️ 覆盖率低于阈值 {r.coverage.ok_ratio * 100:.0f}%，可能存在内容遗漏，请核对以下未覆盖片段：")
+                for snip in r.coverage.uncovered_snippets[:5]:
+                    lines.append(f"  - \"{snip[:80]}\"")
+        else:
+            lines.append(f"- **置信度**：{r.confidence_score * 100:.0f}%")
+        lines.append(f"- 共检查 {r.sections_checked} 个章节、{r.qa_pairs_checked} 个问答")
         lines.append("")
 
         if r.citation_checks:
@@ -75,12 +71,6 @@ class MarkdownRenderer:
                         lines.append(f"- [通过] `{c.citation}`（来源标记）")
                 else:
                     lines.append(f"- [无效] `{c.citation}` 引用格式不识别")
-            lines.append("")
-
-        if r.numeric_anomalies:
-            lines.append("### 数值异常")
-            for a in r.numeric_anomalies:
-                lines.append(f"- [异常] 内容中的「{a.value_in_minutes}」未在 {a.citation} 的源文本中找到")
             lines.append("")
 
         if r.unsupported_claims:

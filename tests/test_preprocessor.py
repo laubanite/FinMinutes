@@ -144,6 +144,36 @@ class TestPerformance:
         assert elapsed < 1.0, f"Took {elapsed:.3f}s, expected < 1s"
 
 
+class TestNormalizeExport:
+    def test_json_lines_unwrapped(self, pp):
+        text = '{"text": "第一句。"}\n{"text": "第二句。"}'
+        assert pp.normalize_export(text) == "第一句。\n第二句。"
+
+    def test_json_lines_mixed_text_falls_through(self, pp):
+        text = "普通文本\n不是json {'text': 'x'}"
+        assert pp.normalize_export(text) == text
+
+    def test_srt_extracted(self, pp):
+        text = (
+            "1\n00:00:01,000 --> 00:00:02,500\n你好世界\n\n"
+            "2\n00:00:03,000 --> 00:00:04,000\n第二行"
+        )
+        result = pp.normalize_export(text)
+        assert "你好世界" in result
+        assert "第二行" in result
+        assert "-->" not in result
+
+    def test_plain_text_unchanged(self, pp):
+        text = "王总：大家好\n李总：你好"
+        assert pp.normalize_export(text) == text
+
+    def test_clean_unwraps_json_lines(self, pp):
+        text = '{"text": "嗯今天三百元"}'
+        result = pp.clean(text)
+        assert "300" in result
+        assert "嗯" not in result
+
+
 class TestChineseToArabic:
     def test_edge_case_zero(self, pp):
         assert pp._chinese_to_arabic("零") is None

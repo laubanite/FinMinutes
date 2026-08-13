@@ -6,6 +6,12 @@ import yaml
 from finminutes.core.fact_checker import FactCheckReport
 from finminutes.core.summarizer import StructuredMinutes, QAPair
 
+# 仅渲染形如 "09:32" / "09:32:15" / "09:32-09:35" 的 timerange；
+# LLM 在转录无时间戳时会脑补 "当前"、"2023-2028" 等垃圾值，一律不渲染。
+_TIMESTAMP_RE = re.compile(
+    r"^\d{1,2}:\d{2}(?::\d{2})?(?:\s*[-~～至]\s*\d{1,2}:\d{2}(?::\d{2})?)?$"
+)
+
 
 def _load_review_template() -> dict:
     path = os.path.join(os.path.dirname(__file__), "..", "templates", "review", "default.yaml")
@@ -16,12 +22,18 @@ def _load_review_template() -> dict:
 
 
 def _serialize_minutes(minutes: StructuredMinutes) -> dict:
-    return {
+    data = {
         "qa_pairs": [
             {"question": q.question, "answer": q.answer, "asker": q.asker, "timerange": q.timerange}
             for q in minutes.qa_pairs
         ],
     }
+    if minutes.sections:
+        data["sections"] = [
+            {"title": s.title, "content": s.content, "citations": s.citations}
+            for s in minutes.sections
+        ]
+    return data
 
 
 class ReviewRenderer:
@@ -43,31 +55,32 @@ class ReviewRenderer:
 
     def _build_body(self) -> str:
         lines = ["", "# 校验稿", ""]
+        self._render_sections(lines)
         self._render_qa(lines)
         return "\n".join(lines).strip()
 
+    def _render_sections(self, lines: list):
+        if not self._minutes.sections:
+            return
+        lines.append("## 主题要点")
+        lines.append("")
+        for sec in self._minutes.sections:
+            if sec.title:
+                lines.append(f"### {sec.title}")
+            if sec.content:
+                lines.append(sec.content)
+            else:
+                lines.append("（无内容）")
+            lines.append("")
+
     def _render_qa(self, lines: list):
         for qa in self._minutes.qa_pairs:
-            ts = qa.timerange
-            if ts:
+            ts = qa.timerange.strip() if qa.timerange else ""
+            if ts and _TIMESTAMP_RE.match(ts):
                 lines.append(f"[{ts}]")
                 lines.append("")
 
             lines.append(f"**Q**：{qa.question}")
             if qa.answer:
-                annotated = self._annotate_numbers(qa.answer)
-                lines.append(f"**A**：{annotated}")
+                lines.append(f"**A**：{qa.answer}")
             lines.append("")
-
-    def _annotate_numbers(self, text: str) -> str:
-        transcript = self._transcript_raw or ""
-        def _replace(m):
-            num = m.group(0)
-            start, end = m.start(), m.end()
-            if (start > 0 and re.match(r'\w', text[start-1])) or \
-               (end < len(text) and re.match(r'\w', text[end])):
-                return num
-            if num in transcript:
-                return num
-            return f"**{num}** ❓[待确认]"
-        return re.sub(r"\d+(?:[.,]\d+)*%?", _replace, text)

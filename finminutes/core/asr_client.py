@@ -72,6 +72,22 @@ class ASRClient:
                 language=language,
                 response_format="text",
             )
+        return self._unwrap_response(response)
+
+    @staticmethod
+    def _unwrap_response(response) -> str:
+        """部分 ASR（如硅基流动 SenseVoice）忽略 response_format 返回 JSON 包裹，
+        需要解包 text 字段，否则后续 pipeline 会把 JSON 结构当正文。"""
+        if isinstance(response, str) and response.strip().startswith("{"):
+            try:
+                import json
+
+                data = json.loads(response)
+                text = data.get("text", "")
+                if text:
+                    return text
+            except Exception:
+                pass
         return response
 
     def _transcribe_chunked(self, audio_path: str, language: str, file_size_mb: float, progress_callback=None) -> str:

@@ -104,3 +104,21 @@ def test_config_property(config_file):
     cm = ConfigManager(config_file)
     assert isinstance(cm.config, dict)
     assert cm.config["active_llm"] == "openrouter_free"
+
+
+def test_get_qa_chunk_size_default(config_file):
+    cm = ConfigManager(config_file)
+    assert cm.get_qa_chunk_size() == 8000
+
+
+def test_get_qa_chunk_size_provider_override(config_file):
+    # provider 配置优先于顶层全局默认（per-provider 能力）
+    cm = ConfigManager(config_file)
+    cm.config["llm_providers"]["openrouter_free"]["qa_chunk_size"] = 6000
+    assert cm.get_qa_chunk_size() == 6000
+
+
+def test_get_qa_chunk_size_zero_or_empty_falls_back(config_file):
+    cm = ConfigManager(config_file)
+    cm.config["qa_chunk_size"] = 0
+    assert cm.get_qa_chunk_size() == 8000

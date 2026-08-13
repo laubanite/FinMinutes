@@ -1,4 +1,5 @@
 import re
+import time
 import logging
 
 logger = logging.getLogger(__name__)
@@ -8,6 +9,16 @@ from finminutes.core.models import Background, Glossary, Term
 
 _SENTENCE_BOUNDARIES = ["\n", "。", "！", "？"]
 _SECONDARY_BOUNDARIES = ["；", "，", "、", ")"]
+
+
+def format_glossary_rules(glossary: Glossary) -> str:
+    """把术语纠错规则格式化为 prompt 文本；无规则时返回「（无）」。"""
+    lines = []
+    for term in glossary.terms:
+        if term.corrections:
+            corr_str = "、".join(term.corrections)
+            lines.append(f"- 当出现「{corr_str}」时，应纠正为「{term.term}」（{term.context}）")
+    return "\n".join(lines) or "（无）"
 
 
 def chunk_text(text: str, max_chars: int = 2000, overlap: int = 200) -> list[str]:
@@ -50,6 +61,45 @@ def _find_split(text: str, start: int, end: int) -> int:
             return pos + len(punct)
 
     return end
+
+
+def parse_blocks(response: str) -> tuple[str, list[dict]]:
+    """宽松解析分片响应为 topic 块：`[{"type": "...", "topic": "...", "text": "..."}]`。
+
+    type 表示块内容表达形态（narration/qa/mixed），缺省按 narration 处理
+    （宁可多进主题要点，不丢信息——用户删比加容易）。
+    返回 (拼接文本, 块列表)；解析失败则整段兜底（内容零丢失）。
+    """
+    import json
+
+    text = (response or "").strip()
+    data = None
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        try:
+            start = text.index("[")
+            end = text.rindex("]")
+            data = json.loads(text[start : end + 1])
+        except (ValueError, json.JSONDecodeError):
+            data = None
+    if not isinstance(data, list) or not data:
+        return text, [{"type": "narration", "topic": "", "text": text}]
+    blocks = []
+    parts = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        topic = str(item.get("topic", "")).strip()
+        body = str(item.get("text", "")).strip()
+        if not body:
+            continue
+        btype = str(item.get("type") or "narration").strip() or "narration"
+        blocks.append({"type": btype, "topic": topic, "text": body})
+        parts.append(body)
+    if not blocks:
+        return text, [{"type": "narration", "topic": "", "text": text}]
+    return "\n\n".join(parts), blocks
 
 
 def levenshtein_distance(a: str, b: str) -> int:
@@ -100,7 +150,7 @@ def find_corrections(text: str, term: Term) -> str | None:
 
 
 class Rewriter:
-    PROMPT_TEMPLATE = """你是一个专业的金融会议纪要专家。请根据以下背景信息和术语纠错规则，对文本片段进行改写。
+    PROMPT_TEMPLATE = """你是一个专业的金融会议纪要专家。请根据以下背景信息和术语纠错规则，把转录片段改写成书面化的纪要内容，并按话题聚合。
 
 ## 背景信息
 {background}
@@ -108,22 +158,37 @@ class Rewriter:
 ## 术语纠错规则
 {glossary_rules}
 
-## 改写要求
-1. 根据术语表纠正金融专业术语的ASR识别错误
-2. 根据背景信息补充分析师注释（标注为[分析师注：...]）
-3. 保持原文语义不变
-4. 不要添加原文中没有的信息
-5. 保持说话人标签格式
+## 要求
+1. 根据术语表纠正金融专业术语的ASR识别错误；必要时根据背景信息补充分析师注释（标注为[分析师注：...]）
+2. **把口语化表达改写为书面语**：删除口头语和语气词（嗯、啊、就是说、蛮、其实、基本上、的话等），把口语短句重组为规范、简练的书面句子（例：「我们跟中芯绍兴合作还是蛮紧密的」→「与中芯绍兴合作紧密」）
+3. **必须保留全部实质信息**：数字、百分比、金额、公司名、专有名词、事件、时间、因果逻辑一条都不能删减、概括或遗漏；禁止添加原文没有的信息；改写后应比原文明显简短（冗余被去除），但信息量不减
+4. 如原文有说话人标签（如「张三：」），保留以辅助核对
+5. **按出现顺序把内容聚合为 2-4 个较大的话题块**（如：市场与竞争格局、产品与技术、产能与供应链、融资与规划），不要切得过细
+6. **判断每块内容的表达形态并标注 type**：
+   - "narration"：单向陈述/介绍/论述，无问答互动（主讲人介绍、技术论述等）
+   - "qa"：明确的提问-回答互动（有问方有答方，含"您觉得…呢"这种跟进提问）
+   - "mixed"：同一块内既有陈述又有问答，此时 text 只写陈述部分，问答部分不要写入（问答会单独提取）
+   - 注意区分修辞性自问自答（如"为什么要做模组化？因为客户要小型化"）：这是陈述，标 narration，不算问答
+7. **全文必须使用简体中文**：标题与正文一律简体，禁止繁体字（如"为/产/与/务/经/营/规/划/财/务/预/测/验"等需写为简体）
+
+## 输出格式
+只输出有效的JSON数组（不要包含任何其他文字或markdown标记），按出现顺序：
+[{{"type": "narration|qa|mixed", "topic": "话题标题", "text": "该话题的书面化内容（保留全部数字与事实）"}}]
 
 ## 待改写文本
 {chunk}
 
-请直接输出改写后的文本："""
+请直接输出JSON："""
 
-    def __init__(self, llm_client, glossary: Glossary, background: Background):
+    def __init__(self, llm_client, glossary: Glossary, background: Background,
+                 chunk_size: int = 4000, on_retry=None, on_progress=None):
         self._llm = llm_client
         self._glossary = glossary
         self._background = background
+        self._chunk_size = chunk_size
+        self._on_retry = on_retry
+        self._on_progress = on_progress  # on_progress(index, total, elapsed_sec)
+        self.topic_blocks: list[list[dict]] = []  # 每分片按序的 topic 块（供 sections 派生）
 
     def rewrite(self, transcript: str) -> str:
         if not transcript.strip():
@@ -131,22 +196,29 @@ class Rewriter:
 
         bg_str = self._format_background()
         glossary_rules = self._format_glossary_rules()
-        chunks = chunk_text(transcript)
+        chunks = chunk_text(transcript, max_chars=self._chunk_size)
+        total = len(chunks)
+        t0 = time.time()
 
         processed = []
-        for chunk in chunks:
+        self.topic_blocks = []
+        for i, chunk in enumerate(chunks, 1):
             prompt = self.PROMPT_TEMPLATE.format(
                 background=bg_str,
                 glossary_rules=glossary_rules,
                 chunk=chunk,
             )
-            response = self._llm.generate(prompt)
+            response = self._llm.generate(prompt, retry_callback=self._on_retry)
+            if self._on_progress:
+                self._on_progress(i, total, time.time() - t0)
             # # ===== 添加调试日志 =====
-            # logger.warning(f"=== 分片 {chunks.index(chunk)+1}/{len(chunks)} 原始响应 ===")
+            # logger.warning(f"=== 分片 {i}/{total} 原始响应 ===")
             # logger.warning(f"响应长度: {len(response)} 字符")
             # logger.warning(f"响应内容 (前500字符): {response[:500]}")
             # # ========================
-            processed.append(response)
+            text, blocks = parse_blocks(response)
+            processed.append(text)
+            self.topic_blocks.append(blocks)
 
         return self._merge_chunks(processed)
 
@@ -167,12 +239,7 @@ class Rewriter:
         return "\n".join(parts) or "（无）"
 
     def _format_glossary_rules(self) -> str:
-        lines = []
-        for term in self._glossary.terms:
-            if term.corrections:
-                corr_str = "、".join(term.corrections)
-                lines.append(f"- 当出现「{corr_str}」时，应纠正为「{term.term}」（{term.context}）")
-        return "\n".join(lines) or "（无）"
+        return format_glossary_rules(self._glossary)
 
     @staticmethod
     def _merge_chunks(chunks: list[str]) -> str:

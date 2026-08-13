@@ -25,7 +25,6 @@ SAMPLE_STRUCTURED_JSON = json.dumps(
             {"title": "业绩概况", "content": "讨论Q3业绩，营收150亿", "citations": ["L1"]},
         ],
         "qa_pairs": [],
-        "takeaways": [{"content": "营收增长", "type": "事实"}],
     },
     ensure_ascii=False,
 )
@@ -119,30 +118,35 @@ class TestPipelineFastMode:
         assert result.markdown_output != ""
 
 
-class TestPipelineStandardMode:
-    def test_standard_mode_calls_rewrite(self, mock_config, mock_llm):
-        p = Pipeline(mock_config)
-        result = p.run(SAMPLE_TRANSCRIPT_SMALL, mode="standard")
-        assert result.mode == "standard"
-        assert result.transcript_enhanced != ""
-        mock_llm.generate.assert_called_once()
+class TestPipelineFullRewriteError:
+    """standard 模式已删除：改写失败中止路径现仅在 full（speech/both 触发改写时）可达。"""
 
-    def test_standard_mode_no_structure(self, mock_config, mock_llm):
-        p = Pipeline(mock_config)
-        result = p.run(SAMPLE_TRANSCRIPT_SMALL, mode="standard")
-        assert result.structured_minutes is None
-        assert result.fact_check_report is None
-
-    def test_standard_mode_rewrite_error(self, mock_config):
+    def test_full_rewrite_error_aborts(self, mock_config):
         mock_llm = MagicMock()
         mock_llm.generate.side_effect = RuntimeError("LLM failed")
         mock_config.get_llm_client.return_value = mock_llm
         p = Pipeline(mock_config)
-        result = p.run(SAMPLE_TRANSCRIPT_SMALL, mode="standard")
+        result = p.run(SAMPLE_TRANSCRIPT_SMALL, mode="full", format="speech")
         assert result.success is False
         assert len(result.errors) >= 1
         assert "改写失败" in result.errors[0]
         assert result.transcript_enhanced != ""  # falls back to cleaned
+        assert result.aborted is True  # 关键阶段失败 → 中止
+        assert result.markdown_output == ""  # 中止后不再渲染
+
+    def test_full_rewrite_error_on_error_called(self, mock_config):
+        mock_llm = MagicMock()
+        mock_llm.generate.side_effect = RuntimeError("LLM failed")
+        mock_config.get_llm_client.return_value = mock_llm
+        p = Pipeline(mock_config)
+        calls = []
+        result = p.run(
+            SAMPLE_TRANSCRIPT_SMALL, mode="full", format="speech",
+            on_error=lambda stage, msg: calls.append((stage, msg)),
+        )
+        assert result.aborted is True
+        assert calls and calls[0][0] == "rewrite"
+        assert "改写失败" in calls[0][1]
 
 
 class TestPipelineFullMode:
@@ -152,13 +156,27 @@ class TestPipelineFullMode:
             SAMPLE_STRUCTURED_JSON,
         ]
         p = Pipeline(mock_config)
-        result = p.run(SAMPLE_TRANSCRIPT_SMALL, mode="full", )
+        result = p.run(SAMPLE_TRANSCRIPT_SMALL, mode="full", format="both")
         assert result.mode == "full"
         assert result.transcript_enhanced != ""
         assert result.structured_minutes is not None
         assert result.fact_check_report is not None
         assert result.markdown_output != ""
         assert mock_llm.generate.call_count == 2
+
+    def test_full_mode_rewrite_topic_blocks_become_sections(self, mock_config, mock_llm):
+        """rewrite 产出的 topic 块直接派生 sections，QA 单独一次调用（调用数不翻倍）。"""
+        mock_llm.generate.side_effect = [
+            '[{"topic": "业绩", "text": "Q3营收约三亿元"}, {"topic": "毛利", "text": "毛利率40%"} ]',
+            json.dumps({"qa_pairs": [], "takeaways": []}, ensure_ascii=False),
+        ]
+        p = Pipeline(mock_config)
+        result = p.run(SAMPLE_TRANSCRIPT_SMALL, mode="full", format="both")
+        assert result.structured_minutes is not None
+        titles = [s.title for s in result.structured_minutes.sections]
+        assert titles == ["业绩", "毛利"], titles
+        assert result.structured_minutes.sections[0].content == "Q3营收约三亿元"
+        assert mock_llm.generate.call_count == 2  # rewrite 1 + QA 1（sections 零额外调用）
 
     def test_full_mode_with_context_files(self, mock_config, mock_llm):
         mock_llm.generate.side_effect = [
@@ -168,7 +186,7 @@ class TestPipelineFullMode:
         p = Pipeline(mock_config)
         result = p.run(
             SAMPLE_TRANSCRIPT_SMALL,
-            mode="full",
+            mode="full", format="both",
             background_path="",
             glossary_tag="",
         )
@@ -183,10 +201,11 @@ class TestPipelineFullMode:
         ]
         mock_config.get_llm_client.return_value = mock_llm
         p = Pipeline(mock_config)
-        result = p.run(SAMPLE_TRANSCRIPT_SMALL, mode="full", )
+        result = p.run(SAMPLE_TRANSCRIPT_SMALL, mode="full", format="both")
         assert len(result.errors) >= 1
         assert any("结构化摘要" in e for e in result.errors)
-        assert result.markdown_output != ""
+        assert result.aborted is True  # 关键阶段失败 → 中止
+        assert result.markdown_output == ""
 
     def test_full_mode_factcheck_error(self, mock_config, mock_llm):
         mock_llm.generate.side_effect = [
@@ -194,7 +213,7 @@ class TestPipelineFullMode:
             SAMPLE_STRUCTURED_JSON,
         ]
         p = Pipeline(mock_config)
-        result = p.run(SAMPLE_TRANSCRIPT_SMALL, mode="full", )
+        result = p.run(SAMPLE_TRANSCRIPT_SMALL, mode="full", format="both")
         assert result.fact_check_report is not None
 
     def test_full_mode_confidence_in_summary(self, mock_config, mock_llm):
@@ -203,9 +222,9 @@ class TestPipelineFullMode:
             SAMPLE_STRUCTURED_JSON,
         ]
         p = Pipeline(mock_config)
-        result = p.run(SAMPLE_TRANSCRIPT_SMALL, mode="full", )
+        result = p.run(SAMPLE_TRANSCRIPT_SMALL, mode="full", format="both")
         s = result.summary
-        assert "事实校验置信度" in s
+        assert "内容覆盖率" in s
 
     def test_full_mode_large_transcript(self, mock_config, mock_llm):
         mock_llm.generate.side_effect = [
@@ -213,16 +232,55 @@ class TestPipelineFullMode:
             SAMPLE_STRUCTURED_JSON,
         ]
         p = Pipeline(mock_config)
-        result = p.run("Large " * 3000, mode="full")
+        result = p.run("Large " * 3000, mode="full", format="both")
         assert result.performance_tier == "large"
 
     def test_full_mode_builtin_template(self, mock_config, mock_llm):
         mock_llm.generate.return_value = '{"sections":[{"title":"S1","content":"C1","citations":["L1"]}],"qa_pairs":[],"takeaways":[]}'
         p = Pipeline(mock_config)
-        result = p.run(SAMPLE_TRANSCRIPT_SMALL, mode="full")
+        result = p.run(SAMPLE_TRANSCRIPT_SMALL, mode="full", format="both")
         # Built-in default prompt is always used, so structured_minutes is generated
         assert result.structured_minutes is not None
         assert len(result.structured_minutes.sections) == 1
+
+    def test_full_mode_qa_skips_rewrite(self, mock_config, mock_llm):
+        """format=qa：跳过 rewrite（省调用），校验稿只 Q&A、无主题要点。"""
+        mock_llm.generate.return_value = json.dumps({"qa_pairs": [{"question": "Q1", "answer": "A1"}]}, ensure_ascii=False)
+        p = Pipeline(mock_config)
+        result = p.run(SAMPLE_TRANSCRIPT_SMALL, mode="full", format="qa")
+        assert mock_llm.generate.call_count == 1  # 只 QA 一次，rewrite 未调用
+        assert result.structured_minutes is not None
+        assert len(result.structured_minutes.sections) == 0
+        assert len(result.structured_minutes.qa_pairs) == 1
+
+    def test_full_mode_speech_skips_qa(self, mock_config, mock_llm):
+        """format=speech：跳过 QA 提取，校验稿只主题要点。"""
+        mock_llm.generate.return_value = '[{"type": "narration", "topic": "公司", "text": "介绍内容"}]'
+        p = Pipeline(mock_config)
+        result = p.run(SAMPLE_TRANSCRIPT_SMALL, mode="full", format="speech")
+        assert mock_llm.generate.call_count == 1  # 只 rewrite，QA 未调用
+        assert result.structured_minutes is not None
+        assert len(result.structured_minutes.sections) == 1
+        assert len(result.structured_minutes.qa_pairs) == 0
+
+    def test_full_mode_both_filters_qa_blocks_from_sections(self, mock_config, mock_llm):
+        """format=both：rewrite 分片中的 qa 块不进主题要点（由 QA 提取覆盖）。"""
+        mock_llm.generate.side_effect = [
+            '[{"type": "narration", "topic": "公司概况", "text": "独白内容"}, {"type": "qa", "topic": "融资", "text": "问答内容"}]',
+            json.dumps({"qa_pairs": [{"question": "融资多少？", "answer": "1.5亿"}]}, ensure_ascii=False),
+        ]
+        p = Pipeline(mock_config)
+        result = p.run(SAMPLE_TRANSCRIPT_SMALL, mode="full", format="both")
+        titles = [s.title for s in result.structured_minutes.sections]
+        assert titles == ["公司概况"]
+        assert "问答内容" not in "".join(s.content for s in result.structured_minutes.sections)
+        assert len(result.structured_minutes.qa_pairs) == 1
+
+    def test_invalid_format(self, mock_config):
+        p = Pipeline(mock_config)
+        result = p.run(SAMPLE_TRANSCRIPT_SMALL, mode="full", format="bogus")
+        assert result.success is False
+        assert any("format" in e.lower() for e in result.errors)
 
 
 class TestPipelineErrorHandling:
@@ -261,7 +319,7 @@ class TestPipelineErrorHandling:
         mock_config.get_llm_client.return_value = mock_llm
         p = Pipeline(mock_config)
         with patch.object(p._preprocessor, "clean", side_effect=ValueError("preprocess fail")):
-            result = p.run(SAMPLE_TRANSCRIPT_SMALL, mode="full")
+            result = p.run(SAMPLE_TRANSCRIPT_SMALL, mode="full", format="both")
             assert len(result.errors) >= 2
             assert result.success is False
 
@@ -271,7 +329,7 @@ class TestPipelineErrorHandling:
             SAMPLE_STRUCTURED_JSON,
         ]
         p = Pipeline(mock_config)
-        result = p.run(SAMPLE_TRANSCRIPT_SMALL, mode="full", )
+        result = p.run(SAMPLE_TRANSCRIPT_SMALL, mode="full", format="both")
         assert result.elapsed_total >= 0
         assert result.elapsed_preprocess >= 0
         assert result.elapsed_rewrite >= 0

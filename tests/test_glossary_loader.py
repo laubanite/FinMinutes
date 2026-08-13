@@ -16,7 +16,7 @@ def loader():
 
 def test_load_semiconductor(loader):
     glossary = loader.load("semiconductor")
-    assert glossary.industry == "半导体"
+    assert glossary.industry == "半导体与存储"
     assert len(glossary.terms) >= 7
 
 
@@ -47,26 +47,26 @@ def test_load_not_found(loader):
 class TestFilterTerms:
     def test_filter_returns_matching_terms(self, loader):
         glossary = loader.load("semiconductor")
-        text = "良率是芯片制造的关键指标，良率直接影响成本"
+        text = "HBM是先进封装的关键技术，HBM直接影响性能"
         result = GlossaryLoader.filter_terms(glossary, text, top_n=10)
-        assert any(t.term == "良率" for t in result)
+        assert any(t.term == "HBM" for t in result)
 
     def test_filter_ordered_by_frequency(self, loader):
         glossary = loader.load("semiconductor")
-        text = "Foundry Foundry Foundry 良率 良率 光刻"
+        text = "HBM HBM HBM 热压键合 热压键合 EUV"
         result = GlossaryLoader.filter_terms(glossary, text, top_n=10)
-        # Foundry appears 3x -> top term
-        assert result[0].term == "Foundry"
+        # HBM appears 3x -> top term
+        assert result[0].term == "HBM"
 
     def test_filter_respects_top_n(self, loader):
         glossary = loader.load("semiconductor")
-        text = "流片 FinFET Foundry 先进制程 良率 光刻 封装"
+        text = "HBM 4F2 EUV 混合键合 存算一体 乙硼烷 六氟化钨"
         result = GlossaryLoader.filter_terms(glossary, text, top_n=3)
         assert len(result) == 3
 
     def test_filter_all_when_smaller_than_top_n(self, loader):
         glossary = loader.load("semiconductor")
-        text = "流片 良率"
+        text = "HBM 4F2"
         result = GlossaryLoader.filter_terms(glossary, text, top_n=100)
         # Only 2 terms match, but top_n is 100, so all matching returned
         assert len(result) == 2
@@ -78,9 +78,9 @@ class TestFilterTerms:
 
     def test_filter_match_by_correction(self, loader):
         glossary = loader.load("semiconductor")
-        text = "刘备是芯片制造的关键"  # "刘备" is a correction for "流片"
+        text = "晶圆对晶圆是先进的键合工艺"  # "晶圆对晶圆" is a correction for "Wafer to wafer"
         result = GlossaryLoader.filter_terms(glossary, text, top_n=10)
-        assert any(t.term == "流片" for t in result)
+        assert any(t.term == "Wafer to wafer" for t in result)
 
 
 class TestParseErrors:
