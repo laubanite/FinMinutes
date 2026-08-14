@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "finminutes"
-version = "0.1.0"
+version = "1.0.0"
 description = "AI 金融会议纪要 Agent - Transcript to Professional Minutes"
 readme = "README.md"
 requires-python = ">=3.10"
