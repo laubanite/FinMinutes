@@ -12,6 +12,12 @@ from finminutes.core.exceptions import (
     LLMTimeoutError,
 )
 
+# Anthropic SDK 惰性导入：未安装时 Anthropic 提供商构造时报可操作的错误，不影响其余功能。
+try:
+    import anthropic
+except ImportError:
+    anthropic = None
+
 
 class LLMClient(ABC):
     @abstractmethod
@@ -170,17 +176,127 @@ class OpenAIClient(_OpenAIBasedClient):
         super().__init__(api_key=api_key, base_url=base_url, model=model, **kwargs)
 
 
-class OllamaClient(_OpenAIBasedClient):
-    def __init__(self, api_key: str = "", base_url: str = "http://localhost:11434/v1", model: str = "qwen2.5:7b", **kwargs):
-        super().__init__(api_key=api_key, base_url=base_url, model=model, **kwargs)
-
-
 class SiliconFlowClient(_OpenAIBasedClient):
     """硅基流动（SiliconFlow）OpenAI 兼容 API。免费模型：Qwen/Qwen2.5-7B-Instruct、
     THUDM/GLM-4-9B-0414、deepseek-ai/DeepSeek-V3 等（以平台实际免费清单为准）。"""
 
     def __init__(self, api_key: str, base_url: str = "https://api.siliconflow.cn/v1", model: str = "deepseek-ai/DeepSeek-V3", **kwargs):
         super().__init__(api_key=api_key, base_url=base_url, model=model, **kwargs)
+
+
+class AnthropicClient(LLMClient):
+    """Anthropic Messages API 客户端（Claude）。
+
+    API 格式与 OpenAI 兼容不同：POST /v1/messages，x-api-key + anthropic-version 头，
+    因此不能复用 OpenAI 客户端，独立实现（重试/节流/错误映射与 OpenAI 客户端对齐）。
+    """
+
+    def __init__(self, api_key: str, base_url: str = "https://api.anthropic.com/v1", model: str = "claude-sonnet-5",
+                 max_retries: int = 3, timeout: int = 120, min_interval_ms: float = 0,
+                 max_tokens: int = 0, retry_callback=None):
+        if anthropic is None:
+            raise ConfigError("使用 Anthropic 提供商需要先安装 anthropic SDK：pip install anthropic")
+        self.model = model
+        self.max_retries = max_retries
+        self.timeout = timeout
+        self.min_interval_ms = min_interval_ms or 0
+        self.max_tokens = max_tokens or 0
+        self.retry_callback = retry_callback
+        self._last_call_at = 0.0
+        self._client = anthropic.Anthropic(
+            api_key=api_key or "",
+            base_url=base_url,
+            timeout=timeout,
+            max_retries=max_retries,
+        )
+
+    def generate(self, prompt: str, system: str = "", retry_callback=None, **kwargs) -> str:
+        return self._call_with_retry(prompt, system=system, retry_callback=retry_callback)
+
+    def test_connection(self):
+        """轻量校验：优先列模型（GET /v1/models），不可用则发 1-token 消息。"""
+        start = time.time()
+        try:
+            try:
+                self._client.models.list()
+            except Exception:
+                self._client.messages.create(
+                    model=self.model, max_tokens=1,
+                    messages=[{"role": "user", "content": "hi"}],
+                )
+            latency_ms = (time.time() - start) * 1000
+            return (True, "OK", round(latency_ms, 1))
+        except Exception as e:
+            return (False, str(e), None)
+
+    def _pace(self):
+        if self.min_interval_ms <= 0:
+            return
+        interval = self.min_interval_ms / 1000.0
+        now = time.monotonic()
+        elapsed = now - self._last_call_at
+        if self._last_call_at > 0 and elapsed < interval:
+            time.sleep(interval - elapsed)
+        self._last_call_at = time.monotonic()
+
+    def _call_with_retry(self, prompt: str, system: str = "", retry_callback=None) -> str:
+        if retry_callback is None:
+            retry_callback = self.retry_callback
+        last_error = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                self._pace()
+                # Anthropic API 的 max_tokens 为必填；配置未设时给保守默认值
+                resp = self._client.messages.create(
+                    model=self.model,
+                    max_tokens=self.max_tokens or 8192,
+                    system=system or None,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                text = "".join(
+                    block.text for block in resp.content if getattr(block, "type", "") == "text"
+                )
+                return text or ""
+            except anthropic.RateLimitError as e:
+                last_error = e
+                if attempt < self.max_retries:
+                    delay = _OpenAIBasedClient._rate_limit_delay(e, attempt)
+                    if retry_callback:
+                        try:
+                            retry_callback(attempt + 1, delay)
+                        except Exception:
+                            pass
+                    time.sleep(delay)
+                    continue
+                raise LLMRateLimitError(
+                    f"Rate limit exceeded after {self.max_retries + 1} attempts. "
+                    "Consider switching to a different provider, reducing request frequency, "
+                    "or configuring a fallback provider."
+                ) from e
+            except anthropic.AuthenticationError as e:
+                raise LLMAuthenticationError(
+                    f"认证失败：请检查 {self.model} 的 API Key 是否正确。"
+                    f"可用 `finminutes config set-key <provider>` 配置，或运行 `finminutes init` 重新引导。"
+                ) from e
+            except anthropic.APITimeoutError as e:
+                last_error = e
+                if attempt < self.max_retries:
+                    delay = min(2.0 * (2**attempt), 30.0)
+                    if retry_callback:
+                        try:
+                            retry_callback(attempt + 1, delay)
+                        except Exception:
+                            pass
+                    time.sleep(delay)
+                    continue
+                raise LLMTimeoutError(
+                    f"Request timed out after {self.max_retries + 1} attempts."
+                ) from e
+            except anthropic.APIError as e:
+                code = getattr(e, "status_code", "?")
+                msg = getattr(e, "message", str(e))
+                raise LLMConnectionError(f"API error (HTTP {code}): {msg}") from e
+        raise last_error
 
 
 class FallbackLLMClient(LLMClient):
@@ -229,19 +345,19 @@ class LLMFactory:
             client = DeepSeekClient(**kwargs)
         elif provider == "openai":
             client = OpenAIClient(**kwargs)
-        elif provider == "ollama":
-            client = OllamaClient(**kwargs)
         elif provider == "siliconflow":
             client = SiliconFlowClient(**kwargs)
+        elif provider == "anthropic":
+            client = AnthropicClient(**kwargs)
         else:
             raise ConfigError(f"Unknown LLM provider: '{provider}'")
 
         # fallback 链：主 provider 限流/失败时自动降级。
-        # 仅当 fallback 可用（本地 ollama，或已配置 api_key）时才启用，避免静默调用空 key 的 provider。
+        # 仅当 fallback 已配置 api_key 时才启用，避免静默调用空 key 的 provider。
         fallback_name = config.get("fallback", "")
         if fallback_name:
             fb_cfg = config.get("_all_providers", {}).get(fallback_name)
-            if fb_cfg and (fb_cfg.get("provider") == "ollama" or fb_cfg.get("api_key")):
+            if fb_cfg and fb_cfg.get("api_key"):
                 try:
                     return FallbackLLMClient(client, LLMFactory.create(fb_cfg))
                 except Exception:

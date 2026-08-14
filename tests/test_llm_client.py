@@ -12,9 +12,9 @@ from finminutes.core.exceptions import (
     LLMTimeoutError,
 )
 from finminutes.core.llm_client import (
+    AnthropicClient,
     DeepSeekClient,
     LLMFactory,
-    OllamaClient,
     OpenAIClient,
     OpenRouterClient,
 )
@@ -101,12 +101,6 @@ class TestProviderSpecificClients:
             url = mock.call_args.kwargs["base_url"]
             assert "deepseek" in url
 
-    def test_ollama_no_auth(self):
-        with patch("finminutes.core.llm_client.OpenAI") as mock:
-            OllamaClient()
-            assert mock.call_args.kwargs["api_key"] == ""
-            assert "localhost" in mock.call_args.kwargs["base_url"]
-
 
 class TestRetry:
     def test_retry_on_rate_limit_then_succeed(self, _patch_openai):
@@ -167,13 +161,55 @@ class TestLLMFactory:
         client = LLMFactory.create({"provider": "openai", "api_key": "sk-oa", "base_url": "https://oa.ai/v1", "model": "gpt-4"})
         assert isinstance(client, OpenAIClient)
 
-    def test_create_ollama(self):
-        client = LLMFactory.create({"provider": "ollama", "base_url": "http://localhost:11434/v1", "model": "qwen2.5:7b"})
-        assert isinstance(client, OllamaClient)
-
     def test_create_unknown_provider(self):
         with pytest.raises(ConfigError):
             LLMFactory.create({"provider": "unknown"})
+
+
+class TestAnthropicClient:
+    """Anthropic SDK 未安装，用伪模块 mock（懒加载：llm_client.anthropic 可为 None 或伪模块）。"""
+
+    @staticmethod
+    def _fake_anthropic():
+        import types
+
+        fake = types.ModuleType("anthropic")
+        fake.Anthropic = MagicMock()
+        fake.RateLimitError = type("RateLimitError", (Exception,), {})
+        fake.APITimeoutError = type("APITimeoutError", (Exception,), {})
+        fake.AuthenticationError = type("AuthenticationError", (Exception,), {})
+        fake.APIError = type("APIError", (Exception,), {})
+        return fake
+
+    def test_missing_sdk_raises_actionable(self):
+        with patch("finminutes.core.llm_client.anthropic", None):
+            with pytest.raises(ConfigError):
+                AnthropicClient(api_key="sk-x")
+
+    def test_generate_builds_messages(self):
+        fake = self._fake_anthropic()
+        block = MagicMock()
+        block.type = "text"
+        block.text = "你好"
+        fake.Anthropic.return_value.messages.create.return_value = MagicMock(content=[block])
+        with patch("finminutes.core.llm_client.anthropic", fake):
+            client = AnthropicClient(api_key="sk-x", model="claude-sonnet-5")
+            out = client.generate("prompt", system="sys")
+        assert out == "你好"
+        call = fake.Anthropic.return_value.messages.create.call_args
+        assert call.kwargs["model"] == "claude-sonnet-5"
+        assert call.kwargs["max_tokens"] == 8192  # 未配置时保守默认
+        assert call.kwargs["system"] == "sys"
+        assert call.kwargs["messages"] == [{"role": "user", "content": "prompt"}]
+
+    def test_factory_create_anthropic(self):
+        fake = self._fake_anthropic()
+        with patch("finminutes.core.llm_client.anthropic", fake):
+            client = LLMFactory.create({
+                "provider": "anthropic", "api_key": "sk-x",
+                "base_url": "https://api.anthropic.com/v1", "model": "claude-sonnet-5",
+            })
+        assert isinstance(client, AnthropicClient)
 
 
 class TestConfigManagerIntegration:

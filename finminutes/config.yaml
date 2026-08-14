@@ -1,8 +1,8 @@
 active_llm: openrouter_free
 
 # 内容完整度/覆盖率阈值（0-1）：import-result / process 低于该值即判定"存在内容遗漏"，
-# 自动生成调试 prompt（import-result）或打印警告（process）。网页版 AI 流程建议保持严格（0.60）。
-coverage_threshold: 0.60
+# 自动生成调试 prompt（import-result）或打印警告（process）。网页版 AI 流程建议保持严格（0.80）。
+coverage_threshold: 0.80
 
 # 全局默认分片阈值（字符），可被单个 llm_provider 的 rewrite_chunk_size/qa_chunk_size 覆盖：
 # pipeline 按 active_llm 对应 provider 的能力取分片大小，使不同上下文窗口的模型各得其所。
@@ -13,12 +13,14 @@ rewrite_chunk_size: 4000
 qa_chunk_size: 8000
 
 llm_providers:
+  # 菜单标签规则：free:true 显示「免费」，rate_limit 显示限速，model 显示当前配置模型名（均非硬编码）
   openrouter_free:
     provider: "openrouter"
     api_key: "${OPENROUTER_API_KEY}"
     base_url: "https://openrouter.ai/api/v1"
     model: "google/gemini-2.0-flash-lite-preview-02-05"
-    description: "推荐默认，完全免费，限速 20 req/min / 50 req/day"
+    free: true
+    rate_limit: "20 req/min · 50 req/day"
     min_request_interval_ms: 3500   # 平滑节流：约 17 req/min，低于 20 上限
     fallback: "deepseek"            # 限流/失败时自动降级（需 deepseek 已配置 key）
     # 免费档单次输出上限小，分片取小值避免截断
@@ -31,7 +33,6 @@ llm_providers:
     api_key: "${DEEPSEEK_API_KEY}"
     base_url: "https://api.deepseek.com/v1"
     model: "deepseek-v4-flash"
-    description: "低成本付费（约 1 元/百万 token），备选；1M 上下文，可用大分片"
     # 大上下文/大输出：显式 max_tokens 否则被 API 默认值（4096）卡死单次输出
     max_tokens: 64000
     rewrite_chunk_size: 20000
@@ -42,30 +43,29 @@ llm_providers:
     api_key: "${OPENAI_API_KEY}"
     base_url: "https://api.openai.com/v1"
     model: "gpt-5.6-luna"
-    description: "付费，高性能"
     max_tokens: 32000
     rewrite_chunk_size: 20000
     qa_chunk_size: 30000
-
-  ollama:
-    provider: "ollama"
-    base_url: "http://localhost:11434/v1"
-    model: "qwen2.5:7b"
-    description: "数据零上云，需8GB+显存，速度较慢"
-    max_tokens: 4096
-    rewrite_chunk_size: 2000
-    qa_chunk_size: 4000
 
   siliconflow:
     provider: "siliconflow"
     api_key: "${SILICONFLOW_API_KEY}"
     base_url: "https://api.siliconflow.cn/v1"
     model: "THUDM/GLM-4-9B-0414"
-    description: "硅基流动免费 LLM（GLM-4-9B），与 ASR 同一 key；更高质可选 deepseek-ai/DeepSeek-V3（免费档输出上限约 2600 字，需调小 rewrite_chunk_size）"
+    free: true
     min_request_interval_ms: 0
     max_tokens: 8000
     rewrite_chunk_size: 4000
     qa_chunk_size: 8000
+
+  anthropic:
+    provider: "anthropic"
+    api_key: "${ANTHROPIC_API_KEY}"
+    base_url: "https://api.anthropic.com/v1"
+    model: "claude-sonnet-5"
+    max_tokens: 64000
+    rewrite_chunk_size: 20000
+    qa_chunk_size: 40000
 
 active_asr: groq
 
@@ -75,7 +75,7 @@ asr_providers:
     api_key: "${GROQ_API_KEY}"
     model: "whisper-large-v3-turbo"
     base_url: "https://api.groq.com/openai/v1"
-    description: "Groq Cloud 免费 Whisper API，完全免费，无需信用卡"
+    free: true
     max_file_size_mb: 25
     chunk_duration_minutes: 10
     overlap_seconds: 5
@@ -86,7 +86,7 @@ asr_providers:
     api_key: "${SILICONFLOW_API_KEY}"
     model: "FunAudioLLM/SenseVoiceSmall"
     base_url: "https://api.siliconflow.cn/v1"
-    description: "硅基流动 SenseVoiceSmall（中文优化）"
+    free: true
     max_file_size_mb: 50
     chunk_duration_minutes: 30
     overlap_seconds: 5

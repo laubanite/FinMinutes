@@ -24,12 +24,8 @@ _CONFIG_PATH = os.path.expanduser("~/.finminutes/config.yaml")
 # 视频扩展名（转写前自动提取音轨并保留为 {stem}_音频.mp3）
 _VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".ts", ".m4v", ".flv"}
 
-_LLM_CHOICES = {
-    "1": ("openrouter_free", "OpenRouter（免费，推荐首选）"),
-    "2": ("deepseek", "DeepSeek（低成本付费）"),
-    "3": ("openai", "OpenAI（付费，高性能）"),
-    "4": ("ollama", "Ollama 本地（数据零上云）"),
-}
+# init / config add 中「手动配置」选项的哨兵值
+_MANUAL = "__manual__"
 
 
 def _get_config() -> ConfigManager:
@@ -132,158 +128,306 @@ def main():
 # ---------------------------------------------------------------------------
 
 
-@main.command()
-@click.option("--force", is_flag=True, help="覆盖已有配置")
-def init(force):
-    """交互式初始化向导"""
-    cfg_path = _CONFIG_PATH
+def _has_real_key(provider_cfg) -> bool:
+    """provider 是否已配置可用的 API Key（非空且非环境变量占位符）。"""
+    if not provider_cfg:
+        return False
+    api_key = provider_cfg.get("api_key", "")
+    return bool(api_key) and "${" not in api_key
 
-    auto_force = False
-    if os.path.exists(cfg_path) and not force:
-        try:
-            cfg = ConfigManager(cfg_path)
-            active = cfg.get_active_llm()
-            pc = cfg.get_llm_config()
-            api_key = pc.get("api_key", "")
-            if not api_key or "${" in api_key:
-                click.echo("检测到配置不完整（API Key 为空），自动进入配置引导...")
-                auto_force = True
-            else:
-                click.echo("正在检测现有配置...")
-                client = LLMFactory.create(pc)
-                ok, msg, latency = client.test_connection()
-                if ok:
-                    click.echo(f"配置已就绪！({active}，延迟 {latency}ms)")
-                    return
-                click.echo(f"检测到连接失败: {msg}")
-                if click.confirm("是否重新配置？", default=True):
-                    auto_force = True
-                else:
-                    return
-        except FinMinutesError:
-            click.echo("检测到配置文件异常，自动进入配置引导...")
-            auto_force = True
 
-    should_enter = force or auto_force or not os.path.exists(cfg_path)
+def _prompt_provider(kind_label: str, providers: dict, active_name: str) -> str:
+    """列出可用提供商（内置 + 用户已有）供选择，返回名称或 _MANUAL。
 
-    existing_raw = None
-    if os.path.exists(cfg_path) and should_enter:
-        try:
-            existing_raw = ConfigManager(cfg_path).config.copy()
-        except FinMinutesError:
-            pass
+    providers 来自合并配置（出厂默认 + 用户自定义），因此 config.yaml 里新增的
+    提供商（如 siliconflow）会自动出现，用户 config add 的自定义项也会出现。
+    """
+    names = list(providers.keys())
+    if not names:
+        click.echo(f"[提示]当前没有可用的{kind_label}提供商（可在下面手动配置）。")
+    for i, n in enumerate(names, 1):
+        marker = " [当前]" if n == active_name else ""
+        label = _provider_label(providers[n])
+        click.echo(f"  [{i}] {n}{marker}  {label}" if label else f"  [{i}] {n}{marker}")
+    manual_idx = len(names) + 1
+    click.echo(f"  [{manual_idx}] 手动配置（添加自定义{kind_label}提供商）")
+    default = names.index(active_name) + 1 if active_name in names else 1
+    while True:
+        choice = click.prompt("请输入编号", type=int, default=default)
+        if 1 <= choice <= len(names):
+            return names[choice - 1]
+        if choice == manual_idx:
+            return _MANUAL
+        click.echo(f"[错误]编号超出范围（1-{manual_idx}），请重试。", err=True)
 
-    if existing_raw:
-        click.echo("检测到已有配置。")
-    click.echo("请选择 LLM 提供商：")
-    for key, (_, label) in _LLM_CHOICES.items():
-        click.echo(f"  [{key}] {label}")
 
-    if existing_raw:
-        current_preset = existing_raw.get("active_llm", "")
-        current_key = None
-        for key, (name, _) in _LLM_CHOICES.items():
-            if name == current_preset:
-                current_key = key
-                break
-        default_choice = current_key or "1"
-        click.echo(f"当前配置为: {current_preset}")
-    else:
-        default_choice = "1"
+def _provider_label(entry: dict) -> str:
+    """provider 菜单标签：免费标记 + 当前配置的模型名 + 限速（均读配置，非硬编码）。"""
+    parts = []
+    if entry.get("free"):
+        parts.append("免费")
+    model = entry.get("model", "")
+    if model:
+        parts.append(model)
+    rate_limit = entry.get("rate_limit", "")
+    if rate_limit:
+        parts.append(rate_limit)
+    return " · ".join(parts)
 
-    choice = click.prompt("请输入编号", type=click.Choice(list(_LLM_CHOICES)), default=default_choice)
-    preset_name, _ = _LLM_CHOICES[choice]
 
-    if existing_raw and preset_name == existing_raw.get("active_llm", ""):
-        providers = existing_raw.get("llm_providers", {})
-        provider_config = providers.get(preset_name, {}).copy()
-    else:
-        provider_config = _get_preset_defaults(preset_name)
+def _prompt_key_if_missing(kind_label: str, name: str, entry: dict, placeholder: str = "") -> None:
+    """provider 已有可用 key 则提示保留；否则交互录入。
 
-    if preset_name != "ollama":
-        api_key = click.prompt(
-            "请输入 API Key（留空则使用当前配置或环境变量）",
-            default="",
-            hide_input=True,
-        )
-        if api_key:
-            provider_config["api_key"] = api_key
+    placeholder 为出厂配置里该 provider 的原始环境变量占位符（如 ${OPENROUTER_API_KEY}），
+    用于空 key 时展示默认值；provider 名→env 名无法可靠推导（openrouter_free 对应 OPENROUTER_API_KEY）。
+    """
+    api_key = entry.get("api_key", "")
+    if api_key and "${" not in api_key:
+        click.echo(f"  {name} 已配置 API Key（{_mask_key(api_key)}），按回车保留。")
+        return
+    default = placeholder or (api_key if "${" in api_key else "${%s_API_KEY}" % name.upper())
+    new_key = click.prompt(
+        f"请输入 {name} 的 API Key（留空则用环境变量占位）",
+        default=default,
+        hide_input=True,
+    )
+    if new_key:
+        entry["api_key"] = new_key
 
-    click.echo("")
-    click.echo("正在测试连接...")
+
+def _test_llm_connection(provider_config) -> tuple:
     try:
         client = LLMFactory.create(provider_config)
-        ok, msg, latency = client.test_connection()
-        if ok:
-            click.echo(f"连接成功！延迟: {latency}ms")
-        else:
-            click.echo(f"连接测试返回: {msg}")
-            if not click.confirm("连接测试未通过，仍然保存配置？", default=False):
-                return
+        return client.test_connection()
     except Exception as e:
-        click.echo(f"连接测试异常: {e}")
-        if not click.confirm("仍然保存配置？", default=False):
-            return
+        return (False, str(e), None)
 
-    if existing_raw:
-        config_data = existing_raw
-        config_data["llm_providers"][preset_name] = provider_config
-        config_data["active_llm"] = preset_name
-    else:
-        config_data = {
-            "active_llm": preset_name,
-            "llm_providers": {preset_name: provider_config},
-            "logging": {
-                "level": "INFO",
-                "file": "finminutes.log",
-                "redact_transcript": True,
-                "redact_api_key": True,
-            },
+
+def _build_asr_client(provider_config):
+    from finminutes.core.asr_client import GroqASRClient, SiliconFlowASRClient
+
+    provider = provider_config.get("provider", "")
+    if provider == "groq":
+        return GroqASRClient(provider_config)
+    if provider == "siliconflow":
+        return SiliconFlowASRClient(provider_config)
+    return None
+
+
+def _test_asr_connection(provider_config) -> tuple:
+    """ASR 轻量校验：GET /models 验证 key + base_url 可达性，零音频、无配额消耗。"""
+    client = _build_asr_client(provider_config)
+    if client is None:
+        return (True, "跳过测试（未知 ASR 类型）", None)
+    try:
+        return client.test_connection()
+    except Exception as e:
+        return (False, str(e), None)
+
+
+def _custom_provider_wizard(kind: str, name: str) -> dict:
+    """自定义提供商全参数向导（config add 的新名称档 / init 的手动配置入口）。"""
+    env_placeholder = "${%s_API_KEY}" % name.upper()
+    if kind == "llm":
+        fmt = click.prompt(
+            "API 格式（OpenAI 兼容 / Anthropic）",
+            type=click.Choice(["openai", "anthropic"]),
+            default="openai",
+        )
+        if fmt == "anthropic":
+            return {
+                "provider": "anthropic",
+                "api_key": click.prompt("API Key（留空则用环境变量占位）", default=env_placeholder, hide_input=True),
+                "base_url": click.prompt("Base URL", default=_DEFAULT_BASE_URLS.get("anthropic", "")),
+                "model": click.prompt("模型名", default="claude-sonnet-5"),
+            }
+        return {
+            "provider": "openai",
+            "api_key": click.prompt("API Key（留空则用环境变量占位）", default=env_placeholder, hide_input=True),
+            "base_url": click.prompt("Base URL", default=_DEFAULT_BASE_URLS.get("openai", "")),
+            "model": click.prompt("模型名"),
         }
+    # ASR：groq / siliconflow（可改 base_url / model 指向 OpenAI 兼容端点）
+    ptype = click.prompt(
+        "提供商类型",
+        type=click.Choice(["groq", "siliconflow"]),
+        default="siliconflow",
+    )
+    default_model = "whisper-large-v3-turbo" if ptype == "groq" else "FunAudioLLM/SenseVoiceSmall"
+    return {
+        "provider": ptype,
+        "api_key": click.prompt("API Key（留空则用环境变量占位）", default=env_placeholder, hide_input=True),
+        "model": click.prompt("模型名", default=default_model),
+        "base_url": click.prompt("Base URL", default=_DEFAULT_BASE_URLS.get(ptype, "")),
+        "max_file_size_mb": click.prompt("文件大小上限(MB)", type=int, default=25),
+        "chunk_duration_minutes": click.prompt("切分时长(分钟)", type=int, default=10),
+        "overlap_seconds": click.prompt("重叠秒数", type=int, default=5),
+        "max_retries": click.prompt("重试次数", type=int, default=3),
+    }
+
+
+def _build_provider_entry(kind: str, name: str, merged: dict, existing_raw: dict) -> dict:
+    """构建/录入一个 provider entry。
+
+    - 名称已存在于用户配置 → 报错（用 config set 修改）；
+    - 名称是内置预设（存在于合并配置） → 预设档：只填 key；
+    - 否则 → 自定义档：全参数向导。
+    """
+    ns = f"{kind}_providers"
+    existing = existing_raw.get(ns, {})
+    if name in existing:
+        click.echo(f"[错误]提供商 {name} 已存在，可用 `config set` 修改，或换个名字。", err=True)
+        sys.exit(1)
+    builtin = (merged.get(ns, {}) or {}).get(name)
+    if builtin:
+        entry = dict(builtin)
+        _prompt_key_if_missing(kind.upper(), name, entry)
+        return entry
+    return _custom_provider_wizard(kind, name)
+
+
+@main.command()
+@click.option("--force", is_flag=True, help="覆盖已有配置，重新引导 LLM 与 ASR")
+def init(force):
+    """交互式初始化向导：引导 LLM（纪要后处理）与 ASR（语音转写）提供商
+
+    提供商列表来自合并配置（出厂默认 + 用户自定义），预设只填 Key，另有手动配置入口。
+    仅写入用户实际选择的 provider 与 Key（最小写），高级参数走出厂默认。
+    """
+    import yaml
+
+    cfg_path = _CONFIG_PATH
+
+    # 现有用户配置（原始 YAML）：最小写时保留用户已有项，不落盘全量默认
+    existing_raw = {}
+    if os.path.exists(cfg_path):
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                existing_raw = yaml.safe_load(f) or {}
+        except Exception:
+            existing_raw = {}
+
+    try:
+        cm = ConfigManager(cfg_path)
+        merged = cm.config
+        pkg_defaults = cm._package_default()
+    except FinMinutesError:
+        merged = {}
+        pkg_defaults = {}
+
+    llm_providers = merged.get("llm_providers", {})
+    asr_providers = merged.get("asr_providers", {})
+    active_llm = merged.get("active_llm", "")
+    active_asr = merged.get("active_asr", "")
+
+    # ---- 快速路径：LLM + ASR 均已配置 Key 且 LLM 连接正常 → 已就绪直接返回 ----
+    if not force:
+        llm_key_ok = _has_real_key(llm_providers.get(active_llm))
+        asr_key_ok = _has_real_key(asr_providers.get(active_asr))
+        if llm_key_ok and asr_key_ok:
+            click.echo("正在检测现有配置...")
+            ok, msg, latency = _test_llm_connection(llm_providers[active_llm])
+            if ok:
+                click.echo(f"配置已就绪！（LLM: {active_llm} · ASR: {active_asr}，延迟 {latency}ms）")
+                click.echo("如需更换提供商，请运行 `finminutes init --force`。")
+                return
+            click.echo(f"检测到连接失败: {msg}")
+            if not click.confirm("是否重新配置？", default=True):
+                return
+        else:
+            missing = []
+            if not llm_key_ok:
+                missing.append(f"LLM（{active_llm or '未设置'}）")
+            if not asr_key_ok:
+                missing.append(f"ASR（{active_asr or '未设置'}）")
+            click.echo("检测到配置不完整：" + "、".join(missing) + " 缺少 API Key，进入配置引导...")
+
+    # ---- 步骤 1：LLM 提供商（纪要后处理）----
+    click.echo("")
+    click.echo("=== LLM 提供商（用于纪要的后处理/生成）===")
+    llm_name = _prompt_provider("LLM", llm_providers, active_llm)
+    if llm_name == _MANUAL:
+        llm_name = click.prompt("新 LLM 提供商名称", default="")
+        if not llm_name:
+            click.echo("未输入提供商名称，已取消。", err=True)
+            sys.exit(1)
+        llm_cfg = _build_provider_entry("llm", llm_name, merged, existing_raw)
+        llm_providers[llm_name] = llm_cfg
+    else:
+        llm_cfg = dict(llm_providers[llm_name])
+        _prompt_key_if_missing(
+            "LLM", llm_name, llm_cfg,
+            placeholder=(pkg_defaults.get("llm_providers", {}).get(llm_name, {}) or {}).get("api_key", ""),
+        )
+    click.echo("")
+    click.echo("正在测试连接...")
+    ok, msg, latency = _test_llm_connection(llm_cfg)
+    if not ok:
+        click.echo(f"连接测试返回: {msg}")
+        if not click.confirm("连接测试未通过，仍然保存配置？", default=False):
+            return
+    else:
+        click.echo(f"连接成功！延迟: {latency}ms")
+
+    # ---- 步骤 2：ASR 提供商（语音转写）----
+    click.echo("")
+    click.echo("=== ASR 提供商（用于语音转写）===")
+    asr_name = _prompt_provider("ASR", asr_providers, active_asr)
+    if asr_name == _MANUAL:
+        asr_name = click.prompt("新 ASR 提供商名称", default="")
+        if not asr_name:
+            click.echo("未输入提供商名称，已取消。", err=True)
+            sys.exit(1)
+        asr_cfg = _build_provider_entry("asr", asr_name, merged, existing_raw)
+        asr_providers[asr_name] = asr_cfg
+    else:
+        asr_cfg = dict(asr_providers[asr_name])
+        _prompt_key_if_missing(
+            "ASR", asr_name, asr_cfg,
+            placeholder=(pkg_defaults.get("asr_providers", {}).get(asr_name, {}) or {}).get("api_key", ""),
+        )
+    click.echo("")
+    click.echo("正在测试连接...")
+    ok, msg, latency = _test_asr_connection(asr_cfg)
+    if not ok:
+        click.echo(f"连接测试返回: {msg}")
+        if not click.confirm("连接测试未通过，仍然保存配置？", default=False):
+            return
+    else:
+        click.echo(f"连接成功！延迟: {latency}ms")
+
+    # ---- 最小写：只更新选中的 provider + active + logging ----
+    existing_raw.setdefault("llm_providers", {})[llm_name] = llm_cfg
+    existing_raw["active_llm"] = llm_name
+    existing_raw.setdefault("asr_providers", {})[asr_name] = asr_cfg
+    existing_raw["active_asr"] = asr_name
+    existing_raw.setdefault("logging", {
+        "level": "INFO",
+        "file": "finminutes.log",
+        "redact_transcript": True,
+        "redact_api_key": True,
+    })
 
     os.makedirs(os.path.dirname(cfg_path), exist_ok=True)
-    import yaml
     with open(cfg_path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(config_data, f, allow_unicode=True, default_flow_style=False)
+        yaml.safe_dump(existing_raw, f, allow_unicode=True, default_flow_style=False)
 
     click.echo("")
     click.echo(f"配置文件已保存至: {cfg_path}")
     click.echo("")
     click.echo("后续使用指南：")
-    click.echo("  finminutes process -t 转录文件.txt    # 快速处理转录")
-    click.echo("  finminutes process --help            # 查看完整选项")
-    click.echo("  finminutes transcribe --help         # 语音转写")
+    click.echo("  finminutes process -t 转录文件.txt    # 文本 → 校验稿")
+    click.echo("  finminutes transcribe -a 音频.m4a     # 音频 → 转录 → 校验稿")
     click.echo("")
-
-
-def _get_preset_defaults(preset: str) -> dict:
-    defaults = {
-        "openrouter_free": {
-            "provider": "openrouter",
-            "api_key": "${OPENROUTER_API_KEY}",
-            "base_url": "https://openrouter.ai/api/v1",
-            "model": "google/gemini-2.0-flash-lite-preview-02-05",
-        },
-        "deepseek": {
-            "provider": "deepseek",
-            "api_key": "${DEEPSEEK_API_KEY}",
-            "base_url": "https://api.deepseek.com/v1",
-            "model": "deepseek-chat",
-        },
-        "openai": {
-            "provider": "openai",
-            "api_key": "${OPENAI_API_KEY}",
-            "base_url": "https://api.openai.com/v1",
-            "model": "gpt-4o",
-        },
-        "ollama": {
-            "provider": "ollama",
-            "api_key": "",
-            "base_url": "http://localhost:11434/v1",
-            "model": "qwen2.5:7b",
-        },
-    }
-    return defaults.get(preset, {}).copy()
+    click.echo("高级参数（默认已适配多数场景，一般无需改动）：")
+    click.echo("  查看全部配置：  finminutes config show --all")
+    click.echo("  修改已有项：    finminutes config set <点路径> <值>")
+    click.echo("     例：finminutes config set asr_providers.groq.max_file_size_mb 50")
+    click.echo("  新增提供商：    finminutes config add asr/llm <名称>")
+    click.echo("")
+    click.echo("⚠️ 配置分层提醒：本工具优先读取 ~/.finminutes/config.yaml（系统盘用户配置）；")
+    click.echo("  项目目录里的 finminutes/config.yaml 只是出厂默认值，会被用户配置覆盖。")
+    click.echo("  改高级参数请用上面的命令，或直接编辑 ~/.finminutes/config.yaml，不要改项目文件。")
 
 
 # ---------------------------------------------------------------------------
@@ -960,9 +1104,6 @@ def config_set_key(provider):
         click.echo(f"   可用（LLM）: {', '.join(cfg.config.get('llm_providers', {}).keys()) or '（无）'}", err=True)
         click.echo(f"   可用（ASR）: {', '.join(cfg.config.get('asr_providers', {}).keys()) or '（无）'}", err=True)
         sys.exit(1)
-    if cfg.config[ns][provider].get("provider") == "ollama":
-        click.echo("[提示]ollama 为本地模型，无需 API Key。")
-        return
     if not _set_provider_key(cfg, provider, ns):
         click.echo("未输入 API Key，已取消。", err=True)
         sys.exit(1)
@@ -974,8 +1115,6 @@ def _warn_missing_llm_key(cfg, provider: str = ""):
     try:
         pc = cfg.get_llm_config()
     except FinMinutesError:
-        return
-    if pc.get("provider") == "ollama":
         return
     api_key = pc.get("api_key", "")
     if not api_key or "${" in api_key:
@@ -991,8 +1130,6 @@ def _ensure_llm_config(cfg) -> bool:
         pc = cfg.get_llm_config()
     except FinMinutesError:
         return True
-    if pc.get("provider") == "ollama":
-        return True
     api_key = pc.get("api_key", "")
     if api_key and "${" not in api_key:
         return True
@@ -1006,7 +1143,7 @@ _DEFAULT_BASE_URLS = {
     "openrouter": "https://openrouter.ai/api/v1",
     "deepseek": "https://api.deepseek.com/v1",
     "openai": "https://api.openai.com/v1",
-    "ollama": "http://localhost:11434/v1",
+    "anthropic": "https://api.anthropic.com/v1",
     "groq": "https://api.groq.com/openai/v1",
     "siliconflow": "https://api.siliconflow.cn/v1",
 }
@@ -1016,46 +1153,75 @@ _DEFAULT_BASE_URLS = {
 @click.argument("kind", type=click.Choice(["llm", "asr"]))
 @click.argument("name")
 def config_add(kind, name):
-    """交互式新增 LLM 或 ASR 提供商
+    """交互式新增/配置 LLM 或 ASR 提供商
+
+    内置预设名（如 groq / openrouter_free，已在出厂 config 中定义）→ 只填 API Key；
+    全新名称 → 全参数向导。与 init 的手动配置入口共用同一套向导。
 
     \b
-    示例：finminutes config add llm myprovider
+    示例：finminutes config add llm openrouter_free   # 预设：只填 key
+          finminutes config add llm myprovider        # 自定义：全参数
           finminutes config add asr myasr
     """
     cfg = _get_config()
     ns = f"{kind}_providers"
+    pkg_defaults = cfg._package_default().get(ns, {})
     providers = cfg.config.setdefault(ns, {})
-    if name in providers:
+    if name in pkg_defaults:
+        # 预设档：内置名（深合并后已在 providers 中）→ 只填 key
+        entry = dict(providers.get(name) or pkg_defaults[name])
+        _prompt_key_if_missing(kind.upper(), name, entry)
+    elif name in providers:
+        # 用户自建且已存在
         click.echo(f"[错误]提供商 {name} 已存在，可用 `config set` 修改，或换个名字。", err=True)
         sys.exit(1)
-    env_placeholder = "${%s}_API_KEY" % name.upper()
-    entry = {}
-    if kind == "llm":
-        entry["provider"] = click.prompt("提供商类型", type=click.Choice(["openrouter", "deepseek", "openai", "ollama"]))
-        if entry["provider"] == "ollama":
-            entry["api_key"] = ""
-            entry["model"] = click.prompt("模型名", default="qwen2.5:7b")
-            entry["description"] = click.prompt("描述（可选）", default="本地模型")
-        else:
-            entry["api_key"] = click.prompt("API Key（留空则用环境变量占位）", default=env_placeholder, hide_input=True)
-            entry["model"] = click.prompt("模型名")
-            entry["description"] = click.prompt("描述（可选）", default="")
-        entry["base_url"] = click.prompt("Base URL", default=_DEFAULT_BASE_URLS.get(entry["provider"], ""))
     else:
-        entry["provider"] = click.prompt("提供商类型", type=click.Choice(["groq", "siliconflow"]))
-        entry["api_key"] = click.prompt("API Key（留空则用环境变量占位）", default=env_placeholder, hide_input=True)
-        entry["model"] = click.prompt("模型名", default="whisper-large-v3-turbo")
-        entry["base_url"] = click.prompt("Base URL", default=_DEFAULT_BASE_URLS.get(entry["provider"], ""))
-        entry["max_file_size_mb"] = click.prompt("文件大小上限(MB)", type=int, default=25)
-        entry["chunk_duration_minutes"] = click.prompt("切分时长(分钟)", type=int, default=10)
-        entry["overlap_seconds"] = click.prompt("重叠秒数", type=int, default=5)
-        entry["max_retries"] = click.prompt("重试次数", type=int, default=3)
+        # 自定义档：全参数向导
+        entry = _custom_provider_wizard(kind, name)
     make_active = click.confirm(f"将 {name} 设为当前激活{kind.upper()}？", default=True)
     providers[name] = entry
     if make_active:
         cfg.config[f"active_{kind}"] = name
     cfg.save()
-    click.echo(f"已新增 {kind} 提供商 {name}。")
+    click.echo(f"已保存 {kind} 提供商 {name}。")
+
+
+@config.command(name="remove")
+@click.argument("kind", type=click.Choice(["llm", "asr"]))
+@click.argument("name")
+def config_remove(kind, name):
+    """删除用户自定义的 LLM 或 ASR 提供商
+
+    用于清理残留/废弃的 provider
+
+    \b
+    示例：finminutes config remove llm ollama
+          finminutes config remove asr myasr
+    """
+    cfg = _get_config()
+    ns = f"{kind}_providers"
+    pkg_defaults = cfg._package_default().get(ns, {})
+    providers = cfg.config.get(ns, {})
+    if name not in providers:
+        click.echo(f"[错误]提供商 {name} 不存在。", err=True)
+        sys.exit(1)
+    if name in pkg_defaults:
+        click.echo(
+            f"[错误]{name} 是内置预设，无法删除（加载时会被出厂默认恢复）。如要停用，请切换 active 后忽略它。",
+            err=True,
+        )
+        sys.exit(1)
+    if cfg.config.get(f"active_{kind}") == name:
+        click.echo(f"[错误]不能删除当前激活的 {kind.upper()} 提供商 {name}，请先切换 active。", err=True)
+        sys.exit(1)
+    if len(providers) <= 1:
+        click.echo(f"[错误]不能删除最后一个 {kind.upper()} 提供商。", err=True)
+        sys.exit(1)
+    if not click.confirm(f"确定删除 {kind.upper()} 提供商 {name}？", default=False):
+        return
+    del providers[name]
+    cfg.save()
+    click.echo(f"已删除 {kind} 提供商 {name}。")
 
 
 def _print_all_providers(cfg):

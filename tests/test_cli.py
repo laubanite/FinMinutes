@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from finminutes.cli import main, _mask_key, _get_preset_defaults, _normalize_path
+from finminutes.cli import main, _mask_key, _normalize_path
 
 
 class TestVersion:
@@ -45,7 +45,7 @@ class TestConfigListProviders:
         runner = CliRunner()
         result = runner.invoke(main, ["config", "list-providers"])
         assert result.exit_code == 0
-        assert "openrouter_free" in result.output or "openai" in result.output or "deepseek" in result.output or "ollama" in result.output
+        assert "openrouter_free" in result.output or "openai" in result.output or "deepseek" in result.output or "siliconflow" in result.output
 
 
 class TestConfigSet:
@@ -152,17 +152,62 @@ class TestConfigNewCommands:
         assert cfg.get_active_asr() == "myasr"
 
     def test_config_add_llm_not_active(self, monkeypatch, tmp_path):
-        inputs = "openrouter\nsk-llm1\nmy-model\n\n\nn\n"
+        # 自定义 LLM：API 格式(openai 兼容) → key → base_url(默认) → 模型名 → 不设为激活
+        inputs = "openai\nsk-llm1\n\nmy-model\nn\n"
         r = self._invoke(monkeypatch, tmp_path, ["config", "add", "llm", "myllm"], input=inputs)
-        assert r.exit_code == 0
+        assert r.exit_code == 0, r.output
         cfg = self._config(tmp_path)
-        assert cfg.config["llm_providers"]["myllm"]["provider"] == "openrouter"
+        assert cfg.config["llm_providers"]["myllm"]["provider"] == "openai"
         assert cfg.get_active_llm() == "openrouter_free"  # 未设为激活
 
-    def test_config_add_duplicate(self, monkeypatch, tmp_path):
-        r = self._invoke(monkeypatch, tmp_path, ["config", "add", "llm", "deepseek"])
+    def test_config_add_llm_anthropic_format(self, monkeypatch, tmp_path):
+        """自定义 LLM 选 Anthropic 格式 → provider=anthropic。"""
+        inputs = "anthropic\nsk-ant1\n\nmy-model\ny\n"
+        r = self._invoke(monkeypatch, tmp_path, ["config", "add", "llm", "myclaude"], input=inputs)
+        assert r.exit_code == 0, r.output
+        cfg = self._config(tmp_path)
+        assert cfg.config["llm_providers"]["myclaude"]["provider"] == "anthropic"
+        assert cfg.config["llm_providers"]["myclaude"]["base_url"].startswith("https://api.anthropic.com")
+        assert cfg.get_active_llm() == "myclaude"
+
+    def test_config_add_preset_only_key(self, monkeypatch, tmp_path):
+        """内置预设名（groq）→ 预设档：只问 API Key，不重复问全参数。"""
+        r = self._invoke(monkeypatch, tmp_path, ["config", "add", "asr", "groq"], input="gsk_new_key\ny\n")
+        assert r.exit_code == 0, r.output
+        cfg = self._config(tmp_path)
+        assert cfg.config["asr_providers"]["groq"]["api_key"] == "gsk_new_key"
+        assert "模型名" not in r.output  # 未走自定义档
+
+    def test_config_add_duplicate_user_created(self, monkeypatch, tmp_path):
+        """用户自建且已存在的名称 → 报错「已存在」。"""
+        self._invoke(monkeypatch, tmp_path, ["config", "add", "llm", "myllm"],
+                     input="openai\nsk-llm1\n\nmy-model\nn\n")
+        r = self._invoke(monkeypatch, tmp_path, ["config", "add", "llm", "myllm"])
         assert r.exit_code != 0
         assert "已存在" in r.output
+
+    def test_config_remove_user_provider(self, monkeypatch, tmp_path):
+        """删除用户自建 provider（清残留，如早期固化进系统盘配置的 ollama）。"""
+        self._invoke(monkeypatch, tmp_path, ["config", "add", "llm", "myllm"],
+                     input="openai\nsk-llm1\n\nmy-model\nn\n")
+        r = self._invoke(monkeypatch, tmp_path, ["config", "remove", "llm", "myllm"], input="y\n")
+        assert r.exit_code == 0, r.output
+        cfg = self._config(tmp_path)
+        assert "myllm" not in cfg.config["llm_providers"]
+
+    def test_config_remove_builtin_refused(self, monkeypatch, tmp_path):
+        """内置预设（出厂 config 定义）删除后加载会被默认恢复 → 拒绝。"""
+        r = self._invoke(monkeypatch, tmp_path, ["config", "remove", "llm", "deepseek"], input="y\n")
+        assert r.exit_code != 0
+        assert "内置预设" in r.output
+
+    def test_config_remove_active_refused(self, monkeypatch, tmp_path):
+        """不能删当前激活的 provider。"""
+        self._invoke(monkeypatch, tmp_path, ["config", "add", "asr", "myasr"],
+                     input="groq\nsk-a1\nmy-asr-model\n\n5\n10\n3\n2\ny\n")
+        r = self._invoke(monkeypatch, tmp_path, ["config", "remove", "asr", "myasr"], input="y\n")
+        assert r.exit_code != 0
+        assert "当前激活" in r.output
 
 
 class TestProcess:
@@ -254,27 +299,18 @@ class TestProcess:
             os.unlink(tmp)
 
 
-class TestGetPresetDefaults:
-    def test_openrouter_free(self):
-        d = _get_preset_defaults("openrouter_free")
-        assert d["provider"] == "openrouter"
+class TestProviderLabel:
+    def test_free_with_model_and_rate_limit(self):
+        from finminutes.cli import _provider_label
+        assert _provider_label({"free": True, "model": "gemini-x", "rate_limit": "20 req/min"}) == "免费 · gemini-x · 20 req/min"
 
-    def test_deepseek(self):
-        d = _get_preset_defaults("deepseek")
-        assert d["provider"] == "deepseek"
+    def test_paid_shows_model_only(self):
+        from finminutes.cli import _provider_label
+        assert _provider_label({"provider": "deepseek", "model": "deepseek-v4-flash"}) == "deepseek-v4-flash"
 
-    def test_openai(self):
-        d = _get_preset_defaults("openai")
-        assert d["provider"] == "openai"
-
-    def test_ollama(self):
-        d = _get_preset_defaults("ollama")
-        assert d["provider"] == "ollama"
-        assert d["api_key"] == ""
-
-    def test_unknown(self):
-        d = _get_preset_defaults("nonexistent")
-        assert d == {}
+    def test_empty_no_label(self):
+        from finminutes.cli import _provider_label
+        assert _provider_label({"provider": "openai"}) == ""
 
 
 class TestNormalizePath:
@@ -292,12 +328,16 @@ class TestInit:
     """init 是交互式向导：隔离配置路径并 mock 连接测试，避免依赖真实网络/配额。"""
 
     @staticmethod
-    def _mock_llm_connection(monkeypatch, ok=True, msg="ok", latency=120):
-        client = MagicMock()
-        client.test_connection.return_value = (ok, msg, latency)
+    def _mock_connections(monkeypatch, llm_ok=True, llm_msg="ok", asr_ok=True, asr_msg="ok"):
+        llm_client = MagicMock()
+        llm_client.test_connection.return_value = (llm_ok, llm_msg, 120 if llm_ok else 0)
         fake = MagicMock()
-        fake.create.return_value = client
+        fake.create.return_value = llm_client
         monkeypatch.setattr("finminutes.cli.LLMFactory", fake)
+
+        asr_client = MagicMock()
+        asr_client.test_connection.return_value = (asr_ok, asr_msg, 80 if asr_ok else 0)
+        monkeypatch.setattr("finminutes.cli._build_asr_client", lambda cfg: asr_client)
 
     @staticmethod
     def _write_config(path, api_key="sk-fake-key-123"):
@@ -306,27 +346,47 @@ class TestInit:
         with open(path, "w", encoding="utf-8") as f:
             yaml.safe_dump({
                 "active_llm": "openrouter_free",
-                "llm_providers": {"openrouter_free": {"api_key": api_key}},
+                "active_asr": "groq",
+                "llm_providers": {"openrouter_free": {"provider": "openrouter", "api_key": api_key}},
+                "asr_providers": {"groq": {"provider": "groq", "api_key": api_key}},
             }, f, allow_unicode=True, default_flow_style=False)
 
-    def test_init_force_without_existing(self, monkeypatch, tmp_path):
-        monkeypatch.setattr("finminutes.cli._CONFIG_PATH", str(tmp_path / "config.yaml"))
-        self._mock_llm_connection(monkeypatch, ok=False, msg="no api key", latency=0)
-        runner = CliRunner()
-        # 无 key → 连接测试失败 → 确认后选择不保存，正常退出（不依赖真实网络）
-        result = runner.invoke(main, ["init", "--force"], input="1\n\nn\n")
-        assert result.exit_code == 0
-
-    def test_init_shows_welcome_or_exists(self, monkeypatch, tmp_path):
+    def test_init_ready_when_complete(self, monkeypatch, tmp_path):
+        """LLM + ASR 均已配置 Key 且 LLM 连接正常 → 打印「配置已就绪」直接返回。"""
         cfg_path = str(tmp_path / "config.yaml")
         monkeypatch.setattr("finminutes.cli._CONFIG_PATH", cfg_path)
         self._write_config(cfg_path)
-        self._mock_llm_connection(monkeypatch, ok=True)
+        self._mock_connections(monkeypatch, llm_ok=True, asr_ok=True)
         runner = CliRunner()
-        # 已有完整配置且连接正常 → 打印「配置已就绪」直接返回，不进入向导
         result = runner.invoke(main, ["init"])
         assert result.exit_code == 0
         assert "配置已就绪" in result.output
+
+    def test_init_force_without_existing_declines(self, monkeypatch, tmp_path):
+        """--force 无现有配置：选 LLM 预设、key 留空、连接失败后选择不保存，正常退出。"""
+        monkeypatch.setattr("finminutes.cli._CONFIG_PATH", str(tmp_path / "config.yaml"))
+        self._mock_connections(monkeypatch, llm_ok=False, llm_msg="no api key", asr_ok=True)
+        runner = CliRunner()
+        result = runner.invoke(main, ["init", "--force"], input="1\n\nn\n")
+        assert result.exit_code == 0
+
+    def test_init_full_flow_writes_both_providers(self, monkeypatch, tmp_path):
+        """完整引导写最小配置：只更新选中的 LLM/ASR provider 与 active，保留默认参数由加载时合并。"""
+        cfg_path = str(tmp_path / "config.yaml")
+        monkeypatch.setattr("finminutes.cli._CONFIG_PATH", cfg_path)
+        self._write_config(cfg_path)
+        self._mock_connections(monkeypatch, llm_ok=True, asr_ok=True)
+        runner = CliRunner()
+        # --force 强制走完整引导；已有 key 自动保留，两个选择都用默认（LLM=1, ASR=1）
+        result = runner.invoke(main, ["init", "--force"], input="1\n1\n")
+        assert result.exit_code == 0, result.output
+        assert "配置文件已保存至" in result.output
+        import yaml
+        with open(cfg_path, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        assert data["active_llm"] == "openrouter_free"
+        assert data["active_asr"] == "groq"
+        assert "配置分层提醒" in result.output
 
 
 class TestHelp:

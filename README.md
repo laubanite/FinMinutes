@@ -251,7 +251,20 @@ finminutes glossary --help        # 查看术语表子命令
 
 ### `finminutes init`
 
-交互式初始化向导，选择 LLM 提供商、输入 API Key、测试连接。`--force` 可强制重新配置。
+交互式初始化向导，分两步引导 **LLM**（纪要后处理）与 **ASR**（语音转写）提供商：选提供商 → 填 API Key → 测试连接（LLM 与 ASR 都做轻量校验）。`--force` 强制重新引导。
+
+- 提供商列表**来自配置而非硬编码**：内置预设 + 你 `config add` 的自定义项都会出现；列表没有你要的，选「手动配置」进入自定义向导。
+- 菜单标签紧凑：免费提供商标「免费」+ 当前配置模型名 + 限速信息（均读配置，非硬编码）；付费提供商只显示模型名，不再有冗长描述。
+- 配置采用**最小写**：只写入你选择的 provider 与 Key，其余高级参数走出厂默认。
+- 结尾输出高级参数入口（`config set <点路径>` / `config add` / `config remove`）与**配置分层提醒**（优先读 `~/.finminutes/config.yaml`，项目 `finminutes/config.yaml` 仅默认值）。
+
+### `finminutes config add`（两档）
+
+内置预设名（如 `groq` / `openrouter_free` / `anthropic`，已在出厂 config 定义）→ **只填 API Key**；全新名称 → 全参数向导（含 max_file_size_mb、切分时长等高级参数）。自定义 LLM 提供商的 API 格式二选一：**OpenAI 兼容**（默认）/ **Anthropic**。
+
+### `finminutes config remove`
+
+删除用户自定义的 provider（清理残留，如早期固化进配置的 ollama）：`finminutes config remove llm ollama`。内置预设无法删除（加载时会被出厂默认恢复）；不能删当前激活或最后一个 provider。
 
 ### `finminutes process`
 
@@ -350,7 +363,9 @@ finminutes render -j 结果.txt                        # 满意后直接渲染�
 
 ```bash
 finminutes config show                 # 显示当前激活配置（API Key 脱敏）
-finminutes config set KEY VALUE        # 仅支持 active_llm / active_asr
+finminutes config set KEY VALUE        # 支持点路径，如 asr_providers.groq.max_file_size_mb 50
+finminutes config add llm/asr NAME     # 新增/配置提供商（预设只填 key，自定义走全参数向导）
+finminutes config remove llm/asr NAME  # 删除用户自定义 provider（如清理残留 ollama）
 finminutes config list-providers       # 列出所有 LLM 提供商
 ```
 
@@ -379,7 +394,7 @@ llm_providers:
     model: google/gemini-2.0-flash-lite-preview-02-05
   deepseek: ...
   openai: ...
-  ollama: ...
+  siliconflow: ...
 
 asr_providers:
   groq:
@@ -459,7 +474,7 @@ FinMinutes — an AI agent that turns audio or transcripts into professional fin
 ```bash
 pip install -r requirements.txt
 pip install -e .
-finminutes init                            # setup LLM provider + API key
+finminutes init                            # setup LLM + ASR providers & API keys
 finminutes process -t transcript.txt       # text → review draft
 finminutes transcribe -a meeting.m4a       # audio → transcript → review draft
 finminutes render -r review.md             # review draft → final draft
