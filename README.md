@@ -45,7 +45,7 @@ FinMinutes 面向投研、尽调、路演、专家访谈等会议场景，把**�
 要求：Python 3.10+，[ffmpeg](https://ffmpeg.org/)（视频提取音轨 / 大文件切分时需要）
 
 ```bash
-git clone <你的仓库地址>
+git clone https://github.com/laubanite/FinMinutes
 cd finminutes
 pip install -r requirements.txt
 pip install -e .          # 安装 finminutes 命令
