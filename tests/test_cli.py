@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
+from finminutes import __version__
 from finminutes.cli import main, _mask_key, _normalize_path
 
 
@@ -12,7 +13,7 @@ class TestVersion:
         runner = CliRunner()
         result = runner.invoke(main, ["--version"])
         assert result.exit_code == 0
-        assert "1.0.0" in result.output
+        assert __version__ in result.output
 
 
 class TestConfigShow:
