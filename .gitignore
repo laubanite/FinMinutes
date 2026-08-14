@@ -2,6 +2,17 @@
 test_run/
 需求文档/
 
+# ---- 会议数据（真实访谈/录音产物，含敏感信息，不入库） ----
+*_转录稿.txt
+*_prompt.txt
+*_import.txt
+*_校验稿.md
+*_成品稿.md
+*_清洗稿.txt
+*_调试prompt.txt
+*_bg.yaml
+*_音频.mp3
+
 # ---- 敏感配置 ----
 finminutes/data/backgrounds/cx_bg.yaml
 .env
