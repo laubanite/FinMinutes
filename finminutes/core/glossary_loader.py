@@ -11,10 +11,19 @@ class GlossaryLoader:
     def __init__(self, glossary_dir: str | None = None):
         self._dir = glossary_dir or self._default_dir()
 
-    def load(self, tag: str) -> Glossary:
-        path = os.path.join(self._dir, f"{tag}.yaml")
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"Glossary file not found: {path}")
+    def load(self, tag_or_path: str) -> Glossary:
+        """加载术语表：参数可以是文件路径（存在则直接加载），否则按内置标签名查找。"""
+        # 路径优先：参数本身就是一个可访问的文件路径
+        if os.path.isfile(tag_or_path):
+            path = tag_or_path
+        else:
+            # tag 兜底：到自带目录查找 <tag>.yaml
+            path = os.path.join(self._dir, f"{tag_or_path}.yaml")
+            if not os.path.exists(path):
+                raise FileNotFoundError(
+                    f"Glossary file not found: neither path '{tag_or_path}' "
+                    f"nor bundled tag '{tag_or_path}' under '{self._dir}'"
+                )
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
         if not isinstance(data, dict):

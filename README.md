@@ -305,7 +305,7 @@ finminutes process -t 转录文件.txt [-b 背景.yaml] [-g 术语表] [-m 模�
 | -------------------- | ------------------------------------------------ |
 | `-t, --transcript` | 转录文本文件路径（必需）                         |
 | `-b, --background` | 背景信息 YAML 文件路径                           |
-| `-g, --glossary`   | 术语表标签名                                     |
+| `-g, --glossary`   | 术语表 YAML 文件路径，或内置标签名（如 `semiconductor`） |
 | `-m, --mode`       | 流水线模式：`fast` / `full`（默认 `full`） |
 | `-o, --output`     | 输出前缀或目录路径                               |
 
@@ -338,7 +338,7 @@ finminutes transcribe -a 音频文件.m4a [--no-process] [-b 背景] [-g 术语�
 | `-a, --audio`      | 音频文件路径（.mp3/.wav/.m4a 等）（必需） |
 | `--no-process`     | 仅转录，不自动生成校验稿                  |
 | `-b, --background` | 背景信息 YAML 文件路径                    |
-| `-g, --glossary`   | 术语表标签名                              |
+| `-g, --glossary`   | 术语表 YAML 文件路径，或内置标签名（如 `semiconductor`） |
 | `-o, --output`     | 输出前缀或目录路径                        |
 
 **ASR 提供商切换：**
@@ -402,10 +402,13 @@ finminutes config list-providers       # 列出所有 LLM 提供商
 术语表管理。
 
 ```bash
-finminutes glossary generate -f 材料文件.txt -t 标签名   # 从材料提取术语生成术语表
+finminutes glossary generate -f 材料文件.txt -t 标签名            # 从材料提取术语生成术语表（默认输出到当前目录 标签名.yaml）
+finminutes glossary generate -f 材料文件.txt -t 标签名 -o 路径/xx.yaml  # 指定输出路径，生成后通过 -g 传入该路径
 ```
 
 支持输入 `.txt` / `.md` / `.docx` / `.pdf`。
+
+`-g` 参数接受**术语表 YAML 文件路径**（文件放在任意位置，如 `-g D:\项目\术语表.yaml`），或**内置标签名**（如 `-g semiconductor`，随包附带的默认术语表）。
 
 ## 配置文件
 

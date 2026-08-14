@@ -283,6 +283,22 @@ class TestPipelineFullMode:
         assert any("format" in e.lower() for e in result.errors)
 
 
+class TestLoadContextGlossaryPath:
+    """_load_context 的 glossary 参数支持文件路径（路径优先）。"""
+
+    def test_load_context_with_glossary_path(self, mock_config, tmp_path):
+        import yaml
+        gl_path = tmp_path / "custom.yaml"
+        gl_path.write_text(
+            yaml.safe_dump({"industry": "ctx", "terms": [{"term": "XYZ"}]}, allow_unicode=True),
+            encoding="utf-8",
+        )
+        p = Pipeline(mock_config)
+        _, glossary = p._load_context("", str(gl_path))
+        assert glossary.industry == "ctx"
+        assert glossary.terms[0].term == "XYZ"
+
+
 class TestPipelineErrorHandling:
     def test_preprocess_error(self, mock_config):
         p = Pipeline(mock_config)

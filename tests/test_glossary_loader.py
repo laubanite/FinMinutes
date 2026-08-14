@@ -44,6 +44,47 @@ def test_load_not_found(loader):
         loader.load("nonexistent_glossary")
 
 
+class TestLoadByPath:
+    """-g 路径优先：参数是存在的文件路径时直接加载；找不到时提示两条查找路径。"""
+
+    @staticmethod
+    def _write(tmp_path, name="custom.yaml", industry="test", terms=None):
+        p = tmp_path / name
+        p.write_text(
+            yaml.safe_dump(
+                {"industry": industry, "terms": terms or [{"term": "XYZ"}]},
+                allow_unicode=True,
+            ),
+            encoding="utf-8",
+        )
+        return p
+
+    def test_load_by_absolute_path(self, tmp_path):
+        gl_path = self._write(tmp_path)
+        glossary = GlossaryLoader().load(str(gl_path))
+        assert glossary.industry == "test"
+        assert glossary.terms[0].term == "XYZ"
+
+    def test_load_by_relative_path(self, tmp_path, monkeypatch):
+        gl_path = self._write(tmp_path, name="relative_glossary.yaml")
+        monkeypatch.chdir(tmp_path)
+        glossary = GlossaryLoader().load("relative_glossary.yaml")
+        assert glossary.terms[0].term == "XYZ"
+
+    def test_path_has_priority_over_bundled_tag(self, tmp_path):
+        """参数是存在的路径时按文件加载，即使名字与内置标签（semiconductor）相同。"""
+        gl_path = self._write(tmp_path, name="semiconductor.yaml", industry="local")
+        glossary = GlossaryLoader().load(str(gl_path))
+        assert glossary.industry == "local"  # 非内置的「半导体与存储」
+
+    def test_not_found_message_lists_both_lookups(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        with pytest.raises(FileNotFoundError) as exc_info:
+            GlossaryLoader().load("no_such_glossary_xyz")
+        msg = str(exc_info.value)
+        assert "no_such_glossary_xyz" in msg
+
+
 class TestFilterTerms:
     def test_filter_returns_matching_terms(self, loader):
         glossary = loader.load("semiconductor")

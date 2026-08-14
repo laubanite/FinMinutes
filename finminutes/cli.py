@@ -438,7 +438,7 @@ def init(force):
 @main.command()
 @click.option("--transcript", "-t", required=True, help="转录文本文件路径")
 @click.option("--background", "-b", default="", help="背景信息 YAML 文件路径")
-@click.option("--glossary", "-g", default="", help="术语表标签名")
+@click.option("--glossary", "-g", default="", help="术语表 YAML 文件路径，或内置标签名（如 semiconductor）")
 @click.option(
     "--mode", "-m",
     default="full",
@@ -457,6 +457,7 @@ def process(transcript, background, glossary, mode, output, skip_rewrite, fmt):
     """从转录稿生成校验稿"""
     transcript = _normalize_path(transcript, "-t ")
     background = _normalize_path(background, "-b ")
+    glossary = _normalize_path(glossary, "-g ")
     output = _normalize_path(output, "-o ")
     if not os.path.exists(transcript):
         click.echo(f"错误：转录文件不存在: {transcript}", err=True)
@@ -756,7 +757,7 @@ def _build_export_prompt(transcript: str, background_text: str, glossary_text: s
 @main.command()
 @click.option("--transcript", "-t", required=True, help="转录稿文件路径")
 @click.option("--background", "-b", default="", help="背景信息 YAML 文件路径")
-@click.option("--glossary", "-g", default="", help="术语表标签名")
+@click.option("--glossary", "-g", default="", help="术语表 YAML 文件路径，或内置标签名（如 semiconductor）")
 @click.option(
     "--format", "-f", "fmt",
     default="qa",
@@ -768,6 +769,7 @@ def export_prompt(transcript, background, glossary, fmt, output):
     """导出可直接粘贴/上传给网页版 AI 的 prompt """
     transcript = _normalize_path(transcript, "-t ")
     background = _normalize_path(background, "-b ")
+    glossary = _normalize_path(glossary, "-g ")
     output = _normalize_path(output, "-o ")
     if not os.path.exists(transcript):
         click.echo(f"错误：转录文件不存在: {transcript}", err=True)
@@ -1416,7 +1418,7 @@ def _maybe_extract_audio(audio: str, output: str) -> str:
 @main.command()
 @click.option("--audio", "-a", required=True, help="音频/视频文件路径（.mp3/.wav/.m4a；视频自动提取音轨）")
 @click.option("--background", "-b", default="", help="背景信息 YAML 文件路径")
-@click.option("--glossary", "-g", default="", help="术语表标签名")
+@click.option("--glossary", "-g", default="", help="术语表 YAML 文件路径，或内置标签名（如 semiconductor）")
 @click.option("--no-process", is_flag=True, help="仅转录，不自动生成校验稿")
 @click.option("--output", "-o", default="", help="输出前缀或目录路径（默认: 音频所在目录）")
 @click.option("--skip-rewrite", is_flag=True, help="跳过改写润色阶段（减少 LLM 调用，适合长文本/限流场景）")
@@ -1430,6 +1432,7 @@ def transcribe(audio, background, glossary, no_process, output, skip_rewrite, fm
     """语音转写，语音直接生成校验稿（可选）"""
     audio = _normalize_path(audio, "-a ")
     background = _normalize_path(background, "-b ")
+    glossary = _normalize_path(glossary, "-g ")
     output = _normalize_path(output, "-o ")
     if not os.path.exists(audio):
         click.echo(f"错误：音频文件不存在: {audio}", err=True)
@@ -1583,7 +1586,7 @@ def glossary():
 @glossary.command(name="generate")
 @click.option("--from", "-f", "from_file", required=True, help="源文件路径（.txt/.docx/.pdf/.md）")
 @click.option("--tag", "-t", required=True, help="术语表标签名")
-@click.option("--output", "-o", default="", help="输出 YAML 路径（默认 data/glossary/<tag>.yaml）")
+@click.option("--output", "-o", default="", help="输出 YAML 路径（默认当前目录 <tag>.yaml）")
 def glossary_generate(from_file, tag, output):
     """从访谈清单/材料中自动提取术语并生成术语表"""
     from_file = _normalize_path(from_file, "-f ")
@@ -1612,9 +1615,7 @@ def glossary_generate(from_file, tag, output):
     click.echo(f"提取到 {len(terms)} 个术语。")
 
     if not output:
-        output = os.path.join(
-            os.path.dirname(__file__), "data", "glossary", f"{tag}.yaml"
-        )
+        output = f"{tag}.yaml"
 
     save_glossary(data, output)
     click.echo(f"术语表已保存至: {output}")

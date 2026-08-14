@@ -447,6 +447,35 @@ class TestExportPrompt:
         assert "sections" in content
         assert "qa_pairs" in content
 
+    def test_export_prompt_with_glossary_path(self, tmp_path):
+        """-g 传文件路径：术语表按路径加载并进入纠错规则。"""
+        import yaml
+        transcript = tmp_path / "m.txt"
+        transcript.write_text("公司营收1.5亿元。", encoding="utf-8")
+        gl_path = tmp_path / "custom.yaml"
+        gl_path.write_text(
+            yaml.safe_dump(
+                {"industry": "test", "terms": [{"term": "ABC", "corrections": ["A B C"]}]},
+                allow_unicode=True,
+            ),
+            encoding="utf-8",
+        )
+        runner = CliRunner()
+        result = runner.invoke(main, ["export-prompt", "-t", str(transcript), "-g", str(gl_path)])
+        assert result.exit_code == 0, result.output
+        content = (tmp_path / "m_prompt.txt").read_text(encoding="utf-8")
+        assert "应纠正为「ABC」" in content
+
+    def test_export_prompt_with_bundled_tag(self, tmp_path):
+        """-g 传内置标签名（semiconductor）：tag 兜底仍可用。"""
+        transcript = tmp_path / "m.txt"
+        transcript.write_text("HBM是先进封装的关键技术。", encoding="utf-8")
+        runner = CliRunner()
+        result = runner.invoke(main, ["export-prompt", "-t", str(transcript), "-g", "semiconductor"])
+        assert result.exit_code == 0, result.output
+        content = (tmp_path / "m_prompt.txt").read_text(encoding="utf-8")
+        assert "应纠正为「" in content
+
 
 class TestImportResult:
     def test_import_result_parses_json(self, tmp_path):
