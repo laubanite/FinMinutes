@@ -1,33 +1,34 @@
 # FinMinutes
 
-AI 金融会议纪要 Agent —— 从录音/转录文本到专业会议纪要的一站式工具。
+AI 金融会议纪要 Agent —— 从视频/录音/转录稿到专业会议纪要的一站式工具。
 
-免费 API + 一站式流水线，拯救万千小黑工。
+免费 LLM + 免费 ASR，一键流水线，拯救小黑工。
 
 [English](#english) | 中文
 
 ## 简介
 
-FinMinutes 是一个面向金融场景的AI 会议纪要工具，支持从**录音**或**转录稿**两种输入方式，自动生成结构化、可溯源的专业纪要。
+FinMinutes 面向投研、尽调、路演、专家访谈等会议场景，把**视频 / 录音 / 转录稿**一键整理成专业纪要。
 
- **输入** ：
+**痛点**：一场访谈听下来，逐字整理、书面化、核对数字，动辄半天。FinMinutes 把它压缩成三步——**转写/导入 → 听一遍录音，对着校验稿核对 → 成品稿直接交付**。
 
-* 录音文件（`.m4a` / `.mp3` / `.wav` 等）
-* 转录稿（来自飞书妙记、讯飞听见、Whisper、Groq 等任意 ASR 工具）
+**核心优势**：
 
-**输出：** 校验稿（完整 Q&A + 数值标记）+ 成品稿（书面化、结构化纪要）
-
-**核心价值：**用户只需要听 1 遍录音，对着校验稿复核，成品稿即可直接交付。
-
+- **零成本跑通全流程**：提供免费 LLM + 免费 ASR，另有网页版 AI 协同兜底，免费配额用完也不停工
+- **数字不丢**：内容完整度自动检查（数字/事实保留率），不达标自动生成调试 prompt 让你迭代补全
+- **双稿闭环**：校验稿保真（完整 Q&A + 主题要点），成品稿支持定制模板、可直接交付；改一份文件即可重渲染
 
 ## 特性
 
-- 语音转写：支持Groq Whisper / 硅基流动 SenseVoiceSmall，自动切分长音频
-- 术语管理：自动从访谈清单/材料提取术语，纠正ASR识别错误
-- 背景信息：提供会议上下文，提升 LLM 理解准确度
-- 事实校验：数字溯源 + 异常标记，杜绝纪要凭空捏造数据
-- 双稿闭环：修改校验稿 → 重新渲染成品稿，只需改一份文件
-- 模板定制：用户可自定义成品稿模板（章节结构、语言风格）
+- **双稿闭环**：校验稿保真核对 + 成品稿可交付，改一份文件重渲染
+- **语音转写**：免费 Groq Whisper / 硅基流动 SenseVoice；视频自动提取音轨；长音频自动切分
+- **网页版 AI 协同**：0 成本把转录稿喂给豆包/DeepSeek 等网页版AI，结果导回校验稿
+- **内容完整度检查**：数字/事实保留率自动打分，不达标自动生成调试 prompt
+- **多 LLM 切换**：免费档优先、限流自动降级（fallback）；支持 Anthropic / 任意 OpenAI 兼容端点
+- **术语表 + 背景信息**：从访谈材料自动生成术语表、纠正 ASR 错词，提升纪要准确度
+- **ASR 格式归一化**：飞书妙记/讯飞/Whisper 等任意转录稿直接可用
+- **模板定制**：成品稿章节结构与语言风格可自定义
+- **零学习成本**：`finminutes --help` + 每步交互引导
 
 ## 安装
 
@@ -98,7 +99,7 @@ finminutes init
 
 交互式选择 LLM 提供商并输入 API Key。配置保存在 `~/.finminutes/config.yaml`（不会写入项目目录）。
 
-> 也可直接设置环境变量：`${OPENROUTER_API_KEY}`、`${DEEPSEEK_API_KEY}`、`${OPENAI_API_KEY}`、`${GROQ_API_KEY}`、`${SILICONFLOW_API_KEY}`
+> 也可直接设置环境变量：`${OPENROUTER_API_KEY}`、`${DEEPSEEK_API_KEY}`、`${OPENAI_API_KEY}`、`${ANTHROPIC_API_KEY}`、`${GROQ_API_KEY}`、`${SILICONFLOW_API_KEY}`
 
 ### 2. 生成会议纪要
 
@@ -106,7 +107,7 @@ finminutes init
 # 方式一：从转录文本直接生成
 finminutes process -t 转录文件.txt
 
-# 方式二：从音频开始（语音转写 + 自动生成纪要）
+# 方式二：从音频/视频开始（语音转写 + 自动生成纪要，视频自动提取音轨）
 finminutes transcribe -a 会议录音.m4a
 
 # 方式三：先转写，再单独生成纪要
@@ -116,38 +117,39 @@ finminutes process -t 会议录音_转录稿.txt
 
 生成结果：
 
-| 产物   | 路径                    |
-| ------ | ----------------------- |
-| 转录稿 | `{文件名}_转录稿.txt` |
-| 校验稿 | `{文件名}_校验稿.md`  |
-| 成品稿 | `{文件名}_成品稿.md`  |
+| 产物   | 路径                    | 说明                                  |
+| ------ | ----------------------- | ------------------------------------- |
+| 转录稿 | `{文件名}_转录稿.txt` | 语音转写的原始文本                    |
+| 清洗稿 | `{文件名}_清洗稿.txt` | ASR 格式归一化后的纯文本（fast 模式） |
+| 校验稿 | `{文件名}_校验稿.md`  | 保真稿：完整 Q&A + 主题要点，供核对   |
+| 成品稿 | `{文件名}_成品稿.md`  | 书面化、结构化，可直接交付            |
 
 ### 输出示例（脱敏）
 
-以下是同一段访谈生成的校验稿与成品稿示例（内容均为虚构脱敏数据）。
+以下是同一段访谈生成的校验稿与成品稿示例（内容均为虚构脱敏数据；示例中公司、技术细节与数字均已脱敏为 XX，实际输出会保留原文数字）。
 
-**校验稿** —— 保留原始 Q&A，数字与原文核对，未在原文出现的数字会标 `❓[待确认]`：
+**校验稿** —— 尽量保真转录：保留完整 Q&A 与主题要点，数字原样保留，供对照录音逐条核对：
 
 ```
 ---
 qa_pairs:
-- question: 第一个关于DRAM的4F²架构，因为这块我不知道XX公司内部现在是不是有一些技术储备或者专利的一些研究，这块大概是怎么样？您能介绍一下吗？
-  answer: 研究的4F²的技术已经算是有一定的落地了。最早是在外部晶圆厂里面去做，现在已经有一定的突破了。主要方向是从传统的6F2变4F²嘛，单元面积确实是缩减了三分之一，通过这样的方式来解决面积方面的问题。毕竟没有EUV嘛，所以说在整个大的方向上面是有一定的突破的。良率比较低，目前可能只有将近20%几的良率，处于一个没有量产的阶段，但整个大的方向上来说是没有问题的。东西是有专利的，我们处理这段是比较早的。
+- question: 第一个关于新一代产品架构，因为这块我不知道XX公司内部现在是不是有一些技术储备或者专利的一些研究，这块大概是怎么样？您能介绍一下吗？
+  answer: 研究的新一代架构已经算是有一定的落地了。最早是在外部晶圆厂里面去做，现在已经有一定的突破了。主要方向是从传统架构演进，单元面积确实是缩减了约 XX，通过这样的方式来解决面积方面的问题。毕竟没有先进工艺嘛，所以说在整个大的方向上面是有一定的突破的。良率比较低，目前可能只有将近 XX% 的良率，处于一个没有量产的阶段，但整个大的方向上来说是没有问题的。东西是有专利的，我们处理这段是比较早的。
   asker: 提问者
   timerange: ''
 - question: 那XX因为这段时间他们有发相关的新闻，他们也在走这个技术路线方向，那我是不是也可以理解他们也是在良率这块可能还是有比较大的提升空间，而不是说底层的技术方案还没有定型？
   answer: 方案技术已经定型了，没有疑问。大家都是在提高良率。
   asker: 提问者
   timerange: ''
-- question: XX他们因为他们有EUV嘛，他们在有EUV的情况下，是不是他们的4F²方案会比国内这几家会有更优的一些密度、什么各方面一些性能指标？
-  answer: 本来不是一个维度，不是一个等级的。密度来说他们只是为了提高上限，而我们是为了通过EUV的限制来跟他们达到同样的制程角度。他们在同样的尺寸的密度上面上限更高，而且性能更优，不是在一个游戏里面去做的。
+- question: XX他们因为他们有先进工艺嘛，他们在有先进工艺的情况下，是不是他们的新一代架构方案会比国内这几家会有更优的一些密度、什么各方面一些性能指标？
+  answer: 本来不是一个维度，不是一个等级的。密度来说他们只是为了提高上限，而我们是为了通过工艺的限制来跟他们达到同样的制程角度。他们在同样的尺寸的密度上面上限更高，而且性能更优，不是在一个游戏里面去做的。
   asker: 提问者
   timerange: ''
-- question: 既然咱们现在也是能够绕过EUV的方案，先天来说成本和良率可能会有一些区别。咱们的，因为现在方案定了，咱们的目标良率大概会在多少？
+- question: 既然咱们现在也是能够绕开先进工艺的方案，先天来说成本和良率可能会有一些区别。咱们的，因为现在方案定了，咱们的目标良率大概会在多少？
   answer: 目标良率大概是在XX%。
   asker: 提问者
   timerange: ''
-- question: 有预计几年能够实现吗？比如说三年还是怎么样？因为我们看XX什么都把4F²的量产时间往后挪了。
+- question: 有预计几年能够实现吗？比如说三年还是怎么样？因为我们看XX什么都把新一代架构的量产时间往后挪了。
   answer: 当然需要，最起码需要X到X年左右的时间，这个周期是非常长的，没办法的。
   asker: 提问者
   timerange: ''
@@ -155,8 +157,8 @@ qa_pairs:
   answer: 没错。
   asker: 提问者
   timerange: ''
-- question: 第三个现在咱们目前HBM整体的进度是怎么样？因为我们也有看一些公开信息，说应该是HBM3是马上要上了，还是怎么样？
-  answer: XX是已经量产的。XX今年已经能出，接下来慢慢的就会往XX方向走。如果未来4F²的技术比较成熟，也有可能会通过像XX这些技术，可能需要一些时间的。
+- question: 第三个现在咱们目前高端产品的整体的进度是怎么样？因为我们也有看一些公开信息，说应该是新一代产品是马上要上了，还是怎么样？
+  answer: XX是已经量产的。XX今年已经能出，接下来慢慢的就会往XX方向走。如果未来新一代架构的技术比较成熟，也有可能会通过像XX这些技术，可能需要一些时间的。
   asker: 提问者
   timerange: ''
 - question: 现在咱们主要是给谁供货，或者说有一些潜在的客户是国内的还是海外的？
@@ -166,26 +168,26 @@ qa_pairs:
 ---
 # 校验稿
 
-**Q**：第一个关于DRAM的4F²架构，因为这块我不知道XX公司内部现在是不是有一些技术储备或者专利的一些研究，这块大概是怎么样？您能介绍一下吗？
-**A**：研究的4F²的技术已经算是有一定的落地了。最早是在外部晶圆厂里面去做，现在已经有一定的突破了。主要方向是从传统的6F2变4F²嘛，单元面积确实是缩减了三分之一，通过这样的方式来解决面积方面的问题。毕竟没有EUV嘛，所以说在整个大的方向上面是有一定的突破的。良率比较低，目前可能只有将近20%几的良率，处于一个没有量产的阶段，但整个大的方向上来说是没有问题的。东西是有专利的，我们处理这段是比较早的。
+**Q**：第一个关于新一代产品架构，因为这块我不知道XX公司内部现在是不是有一些技术储备或者专利的一些研究，这块大概是怎么样？您能介绍一下吗？
+**A**：研究的新一代架构已经算是有一定的落地了。最早是在外部晶圆厂里面去做，现在已经有一定的突破了。主要方向是从传统架构演进，单元面积确实是缩减了约 XX，通过这样的方式来解决面积方面的问题。毕竟没有先进工艺嘛，所以说在整个大的方向上面是有一定的突破的。良率比较低，目前可能只有将近 XX% 的良率，处于一个没有量产的阶段，但整个大的方向上来说是没有问题的。东西是有专利的，我们处理这段是比较早的。
 
 **Q**：那XX因为这段时间他们有发相关的新闻，他们也在走这个技术路线方向，那我是不是也可以理解他们也是在良率这块可能还是有很大的提升空间，而不是说底层的技术方案还没有定型？
 **A**：方案技术已经定型了，没有疑问。大家都是在提高良率。
 
-**Q**：XX他们因为他们有EUV嘛，他们在有EUV的情况下，是不是他们的4F²方案会比国内这几家会有更优的一些密度、什么各方面一些性能指标？
-**A**：本来不是一个维度，不是一个等级的。密度来说他们只是为了提高上限，而我们是为了通过EUV的限制来跟他们达到同样的制程角度。他们在同样的尺寸的密度上面上限更高，而且性能更优，不是在一个游戏里面去做的。
+**Q**：XX他们因为他们有先进工艺嘛，他们在有先进工艺的情况下，是不是他们的新一代架构方案会比国内这几家会有更优的一些密度、什么各方面一些性能指标？
+**A**：本来不是一个维度，不是一个等级的。密度来说他们只是为了提高上限，而我们是为了通过工艺的限制来跟他们达到同样的制程角度。他们在同样的尺寸的密度上面上限更高，而且性能更优，不是在一个游戏里面去做的。
 
-**Q**：既然咱们现在也是能够绕过EUV的方案，先天来说成本和良率可能会有一些区别。咱们的，因为现在方案定了，咱们的目标良率大概会在多少？
+**Q**：既然咱们现在也是能够绕开先进工艺的方案，先天来说成本和良率可能会有一些区别。咱们的，因为现在方案定了，咱们的目标良率大概会在多少？
 **A**：目标良率大概是在XX%。
 
-**Q**：有预计几年能够实现吗？比如说X年还是怎么样？因为我们看XX什么都把4F²的量产时间往后挪了。
+**Q**：有预计几年能够实现吗？比如说X年还是怎么样？因为我们看XX什么都把新一代架构的量产时间往后挪了。
 **A**：当然需要，最起码需要X到X年左右的时间，这个周期是非常长的，没办法的。
 
 **Q**：您介绍说是早期是在外部晶圆厂做，现在是回到咱们自己的产线做了？
 **A**：没错。
 
-**Q**：第三个现在咱们目前HBM整体的进度是怎么样？因为我们也有看一些公开信息，说应该是HBM3是马上要上了，还是怎么样？
-**A**：XX是已经量产的。XX今年已经能出，接下来慢慢的就会往XX方向走。如果未来4F²的技术比较成熟，也有可能会通过像XX这些技术，可能需要一些时间的。
+**Q**：第三个现在咱们目前高端产品的整体的进度是怎么样？因为我们也有看一些公开信息，说应该是新一代产品是马上要上了，还是怎么样？
+**A**：XX是已经量产的。XX今年已经能出，接下来慢慢的就会往XX方向走。如果未来新一代架构的技术比较成熟，也有可能会通过像XX这些技术，可能需要一些时间的。
 ```
 
 **成品稿** —— 由 LLM 基于校验稿精炼，书面化、结构化，保留全部问答对与数值：
@@ -193,24 +195,24 @@ qa_pairs:
 ```
 ## 总结
 
-- **DRAM 4F² 架构技术进展**：XX公司在 4F² 架构技术上已有一定落地，研发路径从XX演进，旨在通过缩短单元面积（约XX）来绕过 EUV 限制。目前该技术已从外部晶圆厂转向自有产线研发，现阶段处于良率突破期（约 XX左右），目标良率定为 XX%。预计实现量产规模化需要约 X 至 X 年的周期。
-- **行业竞争格局**：XX的XX方案已定型，重点在于提升良率；而国内厂商通过该方案旨在应对XX，以达到同等制程角度，两者在XX与性能表现上处于不同维度。
-- **HBM 产品进度**：公司已实现 XX 量产。预计今年可实现XX产品的产出，后续将逐步向 XX 演进。若 4F² 技术趋于成熟，未来有望实现 XX 等更高阶技术的突破。
+- **新一代架构技术进展**：XX公司在新一代架构技术上已有一定落地，研发路径从传统架构演进，旨在通过缩短单元面积（约 XX）来绕开先进工艺的限制。目前该技术已从外部晶圆厂转向自有产线研发，现阶段处于良率突破期（约 XX% 左右），目标良率定为 XX%。预计实现量产规模化需要约 X 至 X 年的周期。
+- **行业竞争格局**：XX的方案已定型，重点在于提升良率；而国内厂商通过该方案旨在应对工艺差距，以达到同等制程水平，两者在密度与性能表现上处于不同维度。
+- **高端产品进度**：公司已实现 XX 量产。预计今年可实现新一代产品的产出，后续将逐步向 XX 演进。若新一代架构技术趋于成熟，未来有望实现 XX 等更高阶技术的突破。
 
 ## Q&A
 
-### DRAM 4F² 架构研发
+### 新一代产品架构研发
 
-**Q：关于 DRAM 的 4F² 架构，XX公司内部在技术储备或专利研究方面的情况如何？**
-A：研究中的 4F² 技术已实现一定程度的落地。研发早期主要在外部晶圆厂进行，目前已实现突破。主要技术方向是从传统的 6F² 向 4F² 演进，通过缩短单元面积（约减少三分之一）来解决因缺乏 EUV 带来的制程问题。目前该技术尚处于良率爬坡阶段，现有良率约为 20% 左右，但技术大方向明确。公司在这一领域的专利储备较早。
+**Q：关于新一代产品架构，XX公司内部在技术储备或专利研究方面的情况如何？**
+A：研究中的新一代架构技术已实现一定程度的落地。研发早期主要在外部晶圆厂进行，目前已实现突破。主要技术方向是从传统架构演进，通过缩短单元面积（约减少 XX）来解决缺乏先进工艺带来的制程问题。目前该技术尚处于良率爬坡阶段，现有良率约为 XX% 左右，但技术大方向明确。公司在这一领域的专利储备较早。
 
 **Q：XX近期发布了相关新闻，表明其也在布局该技术路线。是否可以理解为他们的技术方案尚未定型，而是主要面临良率提升的空间？**
 A：XX的技术方案已经定型，目前的重点在于提高良率。
 
-**Q：由于XX拥有XX技术，其 4F² 方案在XX指标上是否会优于国内厂商？**
-A：两者并不在同一维度竞争。XX通过 XX 提升的是XX；而国内厂商采用该方案是为了在没有XX的情况下，达到与他们相同的制程水平。即在同等尺寸下，XX的XX更高且性能更优。
+**Q：由于XX拥有先进工艺，其新一代架构方案在密度指标上是否会优于国内厂商？**
+A：两者并不在同一维度竞争。XX通过先进工艺提升的是密度上限；而国内厂商采用该方案是为了在缺乏该工艺的情况下，达到与他们相同的制程水平。即在同等尺寸下，XX的密度更高且性能更优。
 
-**Q：既然国内方案是为了绕过 XX，那么在成本和良率方面是否存在差异？在方案已定的情况下，目标良率是多少？**
+**Q：既然国内方案是为了绕开先进工艺，那么在成本和良率方面是否存在差异？在方案已定的情况下，目标良率是多少？**
 A：目标良率约为 XX%。
 
 **Q：实现目标良率预计需要多少年？是否参考XX推迟量产的时间节点？**
@@ -220,7 +222,7 @@ A：预计至少需要 X 到 X 年的时间，由于技术周期较长，难以�
 A：是的，目前已回到自有产线进行研发。
 ```
 
-> 说明：校验稿回答中的数字会与原始转录稿核对——能在原文找到则保留，找不到则加粗并标注 `❓[待确认]`（如上例的 `**20%** ❓[待确认]`）。成品稿由 LLM 精炼，问答对数量守恒，数值原样保留。
+> 说明：**校验稿**尽量保真——保留完整 Q&A 与主题要点、数字原样保留，供你对照录音逐条核对；**成品稿**由 LLM 基于校验稿书面化、结构化精炼，问答对数量守恒，数值原样保留。成品稿无需逐字重听，靠校验稿复核即可。
 
 ## 命令详解
 
@@ -238,16 +240,16 @@ finminutes glossary --help        # 查看术语表子命令
 
 命令总览（按工作流顺序）：
 
-| 命令           | 作用                            | 典型用法                                             |
-| -------------- | ------------------------------- | ---------------------------------------------------- |
-| `config`     | 配置管理（查看/切换模型与 ASR） | `finminutes config show`                           |
-| `init`       | 交互式初始化向导                | `finminutes init`                                  |
-| `glossary`   | 术语表管理                      | `finminutes glossary generate -f 材料.txt -t 标签` |
-| `transcribe` | 语音转写，可直接生成校验稿      | `finminutes transcribe -a 音频.m4a`                |
-| `process`    | 从转录稿生成校验稿              | `finminutes process -t 转录.txt`                   |
-| `render`     | 从校验稿渲染成品稿              | `finminutes render -r 校验稿.md`                   |
-| `export-prompt` | 导出网页版 AI prompt 包      | `finminutes export-prompt -t 转录.txt`             |
-| `import-result` | 导入网页版 AI 结果并报告完整度 | `finminutes import-result -r 结果.txt -s 转录.txt` |
+| 命令              | 作用                            | 典型用法                                             |
+| ----------------- | ------------------------------- | ---------------------------------------------------- |
+| `config`        | 配置管理（查看/切换模型与 ASR） | `finminutes config show`                           |
+| `init`          | 交互式初始化向导                | `finminutes init`                                  |
+| `glossary`      | 术语表管理                      | `finminutes glossary generate -f 材料.txt -t 标签` |
+| `transcribe`    | 语音转写，可直接生成校验稿      | `finminutes transcribe -a 音频.m4a`                |
+| `process`       | 从转录稿生成校验稿              | `finminutes process -t 转录.txt`                   |
+| `render`        | 从校验稿渲染成品稿              | `finminutes render -r 校验稿.md`                   |
+| `export-prompt` | 导出网页版 AI prompt 包         | `finminutes export-prompt -t 转录.txt`             |
+| `import-result` | 导入网页版 AI 结果并报告完整度  | `finminutes import-result -r 结果.txt -s 转录.txt` |
 
 ### `finminutes init`
 
@@ -274,20 +276,20 @@ finminutes glossary --help        # 查看术语表子命令
 finminutes process -t 转录文件.txt [-b 背景.yaml] [-g 术语表] [-m 模式] [-o 输出]
 ```
 
-| 选项                 | 说明                                                            |
-| -------------------- | --------------------------------------------------------------- |
-| `-t, --transcript` | 转录文本文件路径（必需）                                        |
-| `-b, --background` | 背景信息 YAML 文件路径                                          |
-| `-g, --glossary`   | 术语表标签名                                                    |
+| 选项                 | 说明                                             |
+| -------------------- | ------------------------------------------------ |
+| `-t, --transcript` | 转录文本文件路径（必需）                         |
+| `-b, --background` | 背景信息 YAML 文件路径                           |
+| `-g, --glossary`   | 术语表标签名                                     |
 | `-m, --mode`       | 流水线模式：`fast` / `full`（默认 `full`） |
-| `-o, --output`     | 输出前缀或目录路径                                              |
+| `-o, --output`     | 输出前缀或目录路径                               |
 
 **流水线模式：**
 
-| 模式     | 阶段                                   | 是否调用 LLM | 产出                          |
-| -------- | -------------------------------------- | ------------ | ----------------------------- |
-| `fast`   | 预处理（ASR 格式归一化）               | 否           | `{文件名}_清洗稿.txt`       |
-| `full`   | 预处理 + 改写 + 摘要 + 事实校验 + 渲染 | 是（改写 + 摘要） | `{文件名}_校验稿.md`，并打印完整度 |
+| 模式     | 阶段                                   | 是否调用 LLM      | 产出                                 |
+| -------- | -------------------------------------- | ----------------- | ------------------------------------ |
+| `fast` | 预处理（ASR 格式归一化）               | 否                | `{文件名}_清洗稿.txt`              |
+| `full` | 预处理 + 改写 + 摘要 + 事实校验 + 渲染 | 是（改写 + 摘要） | `{文件名}_校验稿.md`，并打印完整度 |
 
 **`-o` 输出路径规则：**
 
@@ -333,12 +335,12 @@ finminutes render -r 校验稿.md [-T 模板名] [-o 输出]
 finminutes render -j 网页AI结果.txt                 # 直接吃网页版 AI 的原始 JSON，跳过校验稿中间格式
 ```
 
-| 选项                 | 说明                                            |
-| -------------------- | ----------------------------------------------- |
-| `-r, --review`     | 校验稿文件路径（与 `-j` 二选一，必给一个）     |
-| `-j, --json`       | 网页版 AI 返回的原始 JSON，直接渲染成品稿（与 `-r` 二选一，必给一个） |
-| `-T, --template`   | 成品稿模板名称（默认`default`）                |
-| `-o, --output`     | 输出前缀或目录路径                              |
+| 选项               | 说明                                                                   |
+| ------------------ | ---------------------------------------------------------------------- |
+| `-r, --review`   | 校验稿文件路径（与`-j` 二选一，必给一个）                            |
+| `-j, --json`     | 网页版 AI 返回的原始 JSON，直接渲染成品稿（与`-r` 二选一，必给一个） |
+| `-T, --template` | 成品稿模板名称（默认`default`）                                      |
+| `-o, --output`   | 输出前缀或目录路径                                                     |
 
 ### `finminutes export-prompt` / `import-result`（网页版 AI 协同，0 成本）
 
@@ -351,11 +353,12 @@ finminutes render -j 结果.txt                        # 满意后直接渲染�
 ```
 
 `import-result` 的完整度检查是**确定性数字/实体保留率**（零 LLM 调用）：
+
 - 打印 `[完整度] X%（N/M 段转录被提取内容覆盖）`；
-- 低于阈值（`coverage_threshold`，默认 **0.60**）自动写 `{结果}_调试prompt.txt`，内含当前已提取内容 + 未覆盖转录片段，拖回网页版 AI 补全后重新 `import-result` 即可；
+- 低于阈值（`coverage_threshold`，默认 **0.80**）自动写 `{结果}_调试prompt.txt`，内含当前已提取内容 + 未覆盖转录片段，拖回网页版 AI 补全后重新 `import-result` 即可；
 - 未提供 `-s` 时跳过完整度检查并提示。
 
-> **配置分层提醒**：真正生效的配置是 `~/.finminutes/config.yaml`；仓库里的 `finminutes/config.yaml` 只是「出厂默认值」，会被用户配置覆盖。改阈值请用 `finminutes config set coverage_threshold 0.6`（会写入正确位置），不要直接改仓库配置。
+> **配置分层提醒**：真正生效的配置是 `~/.finminutes/config.yaml`；仓库里的 `finminutes/config.yaml` 只是「出厂默认值」，会被用户配置覆盖。改阈值请用 `finminutes config set coverage_threshold 0.8`（会写入正确位置），不要直接改仓库配置。
 
 ### `finminutes config`
 
@@ -422,7 +425,7 @@ industry: "半导体"
 participants: "CEO 张总，CFO 李总"
 known_consensus:
   - "公司计划明年申报科创板"
-  - "HBM 业务预计明年放量"
+  - "高端存储业务预计明年放量"
 meeting_purpose: "Q3 业绩展望及新产品路线图"
 ```
 
@@ -467,7 +470,27 @@ MIT
 
 # English
 
-FinMinutes — an AI agent that turns audio or transcripts into professional financial meeting minutes.
+FinMinutes — a one-stop tool that turns **video / audio / transcripts** into professional meeting minutes for investment research, due diligence, roadshows, and expert interviews.
+
+**The problem**: a single interview takes half a day to transcribe, polish, and fact-check by hand. FinMinutes compresses it to three steps — **transcribe/import → listen once and verify against the review draft → deliver the polished final draft**.
+
+**Key advantages**:
+
+- **Runs free end-to-end**: free LLM + free ASR, with a web-AI loop as a fallback when free quotas run out
+- **Numbers are never lost**: automatic content-completeness check (number/fact retention); below threshold it auto-writes a debug prompt so you can iterate
+- **Two-draft workflow**: the review draft preserves the full Q&A + key points for verification; the final draft is polished and deliverable — edit one file and re-render
+
+## Features
+
+- **Two-draft loop**: fidelity review draft + deliverable final draft; edit one file, re-render
+- **Speech-to-text**: free Groq Whisper / SiliconFlow SenseVoice; auto-extracts audio from video; auto-chunks long files
+- **Web-AI loop**: 0-cost — export a prompt pack, paste it into Doubao / DeepSeek web AIs, import the result back
+- **Completeness check**: number/fact retention scoring (deterministic, no LLM); auto-writes a debug prompt when below threshold
+- **Multiple LLMs**: free tier first with auto-fallback on rate limits; supports Anthropic / any OpenAI-compatible endpoint
+- **Glossary + background**: auto-generate glossaries from interview materials, correct ASR errors
+- **ASR format normalization**: transcripts from Feishu / iFlytek / Whisper etc. work directly
+- **Custom templates**: final-draft structure and style are configurable
+- **Zero learning curve**: `finminutes --help` + interactive prompts at every step
 
 ## Quick Start
 
@@ -476,33 +499,42 @@ pip install -r requirements.txt
 pip install -e .
 finminutes init                            # setup LLM + ASR providers & API keys
 finminutes process -t transcript.txt       # text → review draft
-finminutes transcribe -a meeting.m4a       # audio → transcript → review draft
+finminutes transcribe -a meeting.m4a       # audio/video → transcript → review draft
 finminutes render -r review.md             # review draft → final draft
+finminutes render -j result.json           # web-AI JSON → final draft directly
 ```
 
 ## Commands
 
-| Command        | Description                                   |
-| -------------- | --------------------------------------------- |
-| `init`       | Interactive setup wizard                      |
-| `process`    | Transcript → review draft                    |
-| `transcribe` | Audio → transcript (+ optional review draft) |
-| `render`     | Review draft → final draft                   |
-| `config`     | Show/set configuration (API keys masked)      |
-| `glossary`   | Generate/manage term glossaries               |
+| Command          | Description                                        |
+| ---------------- | -------------------------------------------------- |
+| `init`         | Interactive setup wizard (LLM + ASR)               |
+| `process`      | Transcript → review draft                         |
+| `transcribe`   | Audio/video → transcript (+ optional review draft) |
+| `render`       | Review draft → final draft (`-r` draft, `-j` JSON) |
+| `export-prompt` | Build a web-AI prompt pack from a transcript       |
+| `import-result` | Parse web-AI JSON → review draft + completeness report |
+| `config`       | show / set / add / remove / set-key / list         |
+| `glossary`     | Generate/manage term glossaries                    |
 
-## Pipeline Modes
+## LLM Providers
 
-| Mode   | Stages                    | LLM calls | Output                     |
-| ------ | ------------------------- | --------- | -------------------------- |
-| `fast` | preprocess only           | No        | `{stem}_清洗稿.txt`      |
-| `full` | + rewrite + summarize + fact-check | Yes       | `{stem}_校验稿.md` + coverage report |
-
-> `import-result` reports content completeness (deterministic, no LLM). Below the `coverage_threshold` (default 0.90) it auto-writes a debug prompt for the web-AI loop; `render --from-json` skips the review-draft intermediate entirely.
+- **OpenRouter** (`openrouter_free`, default): free tier, 20 req/min · 50 req/day
+- **DeepSeek**, **OpenAI**, **SiliconFlow** (free tier), **Anthropic** (Claude)
+- Any **OpenAI-compatible** endpoint via a custom provider; **fallback** chain auto-degrades on rate limits
 
 ## ASR Providers
 
 - **Groq** (`groq`, default): `whisper-large-v3-turbo`, 25MB file limit
 - **SiliconFlow** (`siliconflow`): `FunAudioLLM/SenseVoiceSmall`, 50MB file limit
 
-Switch with `finminutes config set active_asr <provider>`. Files over the limit are auto-chunked (requires ffmpeg).
+Switch with `finminutes config set active_asr <provider>`. Video files auto-extract their audio track; files over the limit are auto-chunked (requires ffmpeg).
+
+## Pipeline Modes
+
+| Mode   | Stages                             | LLM calls | Output                                |
+| ------ | ---------------------------------- | --------- | ------------------------------------- |
+| `fast` | preprocess only                    | No        | `{stem}_清洗稿.txt`                 |
+| `full` | + rewrite + summarize + fact-check | Yes       | `{stem}_校验稿.md` + coverage report |
+
+> `import-result` reports content completeness (deterministic, no LLM). Below the `coverage_threshold` (default 0.80) it auto-writes a debug prompt for the web-AI loop; `render -j` skips the review-draft intermediate entirely.
