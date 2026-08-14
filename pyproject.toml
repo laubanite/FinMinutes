@@ -30,7 +30,13 @@ version = {attr = "finminutes.__version__"}
 include = ["finminutes*"]
 
 [tool.setuptools.package-data]
-finminutes = ["config.yaml", "data/**/*", "templates/**/*"]
+# 显式列出要打包的数据文件：data/** 通配会误包本地未跟踪/敏感文件（如 cx_bg.yaml）
+finminutes = [
+    "config.yaml",
+    "data/backgrounds/example.yaml",
+    "data/glossary/semiconductor.yaml",
+    "templates/**/*",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
