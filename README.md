@@ -1,10 +1,20 @@
+<div align="center">
+
 # FinMinutes
 
-AI 金融会议纪要 Agent —— 从视频/录音/转录稿到专业会议纪要的一站式工具。
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/downloads/) [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688.svg)](https://fastapi.tiangolo.com/)
 
-免费 LLM + 免费 ASR，一键流水线，拯救小黑工。
+**AI 金融会议纪要 Agent —— 从视频/录音/转录稿到专业会议纪要的一站式工具。**
 
-[English](#english) | 中文
+**免费 LLM + 免费 ASR，一键流水线，拯救小黑工。**
+
+[简介](#简介) • [特性](#特性) • [安装](#安装) • [快速开始](#快速开始) • [免费 API Key](#免费-api-key-获取指南) • [命令详解](#命令详解) • [License](#license)
+
+<p align="center">
+中文 | <a href="#english">English</a>
+</p>
+
+</div>
 
 ## 简介
 
@@ -32,7 +42,7 @@ FinMinutes 面向投研、尽调、路演、专家访谈等会议场景，把**�
 
 ## 安装
 
-要求：Python 3.10+，[ffmpeg](https://ffmpeg.org/)（大文件切分时需要）
+要求：Python 3.10+，[ffmpeg](https://ffmpeg.org/)（视频提取音轨 / 大文件切分时需要）
 
 ```bash
 git clone <你的仓库地址>
@@ -43,7 +53,7 @@ pip install -e .          # 安装 finminutes 命令
 
 ### 安装 ffmpeg
 
-ffmpeg 仅在音频超过 ASR 提供商限制（Groq 25MB / 硅基流动 50MB）需要切分时使用。按你的系统选择：
+ffmpeg 用于**视频提取音轨**与**大文件切分**（音频超过 ASR 提供商限制 Groq 25MB / 硅基流动 50MB 时）。按你的系统选择：
 
 **Windows：**
 
@@ -80,14 +90,29 @@ sudo yum install ffmpeg
 
 如果你不想手动操作，把下面这段话复制给 Claude Code / Codex / opencode / WorkBuddy 等任意 AI Agent，它会帮你完成全部安装：
 
-> 请帮我安装并配置 finminutes 项目（一个 AI 会议纪要工具），仓库地址：https://github.com/laubanite/FinMinutes
->
-> 1. 从 https://github.com/laubanite/FinMinutes 克隆项目到本地
-> 2. 检查 Python 版本是否为 3.10 及以上，不满足则提示我升级
-> 3. 检查系统是否已安装 ffmpeg（`ffmpeg -version`），未安装则按我的系统（Windows/macOS/Linux）给出并执行安装命令，安装后提醒我重新打开终端
-> 4. 执行 `pip install -r requirements.txt`
-> 5. 执行 `pip install -e .`
-> 6. 验证 `finminutes --help` 能正常运行，然后告诉我下一步执行 `finminutes init` 完成配置
+> 请帮我克隆并安装配置好 https://github.com/laubanite/FinMinutes 这个 AI 会议纪要工具（含 ffmpeg），验证 `finminutes --help` 能正常运行，然后告诉我下一步怎么做。
+
+## 免费 API Key 获取指南
+
+FinMinutes 全流程可零成本跑通：LLM 用免费档、ASR 用免费提供商。下面列出各提供商的注册与取 key 方式。所有 key 都可通过 `finminutes init` 交互式录入（推荐），或设置环境变量（见「快速开始」）。
+
+### LLM（生成纪要）
+
+| 提供商                                                        | 免费额度                                   | 获取方式                                                                               |
+| ------------------------------------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------- |
+| [**OpenRouter**](https://openrouter.ai)（默认，推荐）    | 提供免费模型，免费档：20 次/分钟、50 次/天 | 注册[openrouter.ai](https://openrouter.ai) → 右上角头像 → Keys → Create Key          |
+| [**硅基流动 SiliconFlow**](https://cloud.siliconflow.cn) | 提供免费模型（如 GLM-4-9B）                | 注册[cloud.siliconflow.cn](https://cloud.siliconflow.cn) → 控制台 → API 密钥 → 新建  |
+| [**DeepSeek**](https://platform.deepseek.com/api_keys)   | 付费                                       | 注册[platform.deepseek.com](https://platform.deepseek.com/api_keys) → API Keys → 创建 |
+| [**OpenAI**](https://platform.openai.com)                | 付费                                       | [platform.openai.com](https://platform.openai.com) → API Keys → Create                |
+
+### ASR（语音转写）
+
+| 提供商                                                  | 免费额度                             | 获取方式                                                                      |
+| ------------------------------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------- |
+| [**Groq**](https://console.groq.com)（默认，推荐） | Whisper 大模型免费，单文件 ≤ 25MB   | 注册[console.groq.com](https://console.groq.com) → API Keys → Create API Key |
+| **硅基流动 SiliconFlow**                          | SenseVoiceSmall 免费，单文件 ≤ 50MB | 同上（硅基流动一个账号一个 key 同时用于 LLM 与 ASR）                          |
+
+> **零成本提示**：想完整跑一遍，只需一个 **Groq key（ASR）+ 一个 OpenRouter key（LLM）**，即可「音频 → 转录稿 → 校验稿 → 成品稿」全流程。免费配额不够时还有网页版 AI 协同兜底（`export-prompt` / `import-result`，完全免费、不限次数）。
 
 ## 快速开始
 
@@ -504,18 +529,40 @@ finminutes render -r review.md             # review draft → final draft
 finminutes render -j result.json           # web-AI JSON → final draft directly
 ```
 
+## Free API Keys
+
+FinMinutes runs free end-to-end: free-tier LLM + free ASR providers. All keys can be entered interactively via `finminutes init` (recommended), or set as environment variables (see Quick Start).
+
+### LLM (minutes generation)
+
+| Provider                                                            | Free tier                                                               | Get a key                                                                                      |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| [**OpenRouter**](https://openrouter.ai) (default, recommended) | Free tier: 20 req/min, 50 req/day (accounts with < $10 lifetime credit) | Sign up at[openrouter.ai](https://openrouter.ai) → Keys → Create Key                          |
+| [**SiliconFlow**](https://cloud.siliconflow.cn)                | Free models (e.g. GLM-4-9B)                                             | Sign up at[cloud.siliconflow.cn](https://cloud.siliconflow.cn) → API Keys → Create            |
+| [**DeepSeek**](https://platform.deepseek.com/api_keys)         | Paid                                                                    | Sign up at[platform.deepseek.com](https://platform.deepseek.com/api_keys) → API Keys → Create |
+| [**OpenAI**](https://platform.openai.com)                      | Paid                                                                    | [platform.openai.com](https://platform.openai.com) → API Keys → Create                        |
+
+### ASR (speech-to-text)
+
+| Provider                                                         | Free tier                           | Get a key                                                                           |
+| ---------------------------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------- |
+| [**Groq**](https://console.groq.com) (default, recommended) | Free Whisper, files ≤ 25MB         | Sign up at[console.groq.com](https://console.groq.com) → API Keys → Create API Key |
+| **SiliconFlow**                                            | Free SenseVoiceSmall, files ≤ 50MB | Same as above (one SiliconFlow key works for both LLM and ASR)                      |
+
+> **Zero-cost tip**: to run the whole flow, one **Groq key (ASR)** + one **OpenRouter key (LLM)** is all you need — audio → transcript → review draft → final draft. When free quotas run out, the web-AI loop (`export-prompt` / `import-result`) is a fully free, unlimited fallback.
+
 ## Commands
 
-| Command          | Description                                        |
-| ---------------- | -------------------------------------------------- |
-| `init`         | Interactive setup wizard (LLM + ASR)               |
-| `process`      | Transcript → review draft                         |
-| `transcribe`   | Audio/video → transcript (+ optional review draft) |
-| `render`       | Review draft → final draft (`-r` draft, `-j` JSON) |
-| `export-prompt` | Build a web-AI prompt pack from a transcript       |
+| Command           | Description                                             |
+| ----------------- | ------------------------------------------------------- |
+| `init`          | Interactive setup wizard (LLM + ASR)                    |
+| `process`       | Transcript → review draft                              |
+| `transcribe`    | Audio/video → transcript (+ optional review draft)     |
+| `render`        | Review draft → final draft (`-r` draft, `-j` JSON) |
+| `export-prompt` | Build a web-AI prompt pack from a transcript            |
 | `import-result` | Parse web-AI JSON → review draft + completeness report |
-| `config`       | show / set / add / remove / set-key / list         |
-| `glossary`     | Generate/manage term glossaries                    |
+| `config`        | show / set / add / remove / set-key / list              |
+| `glossary`      | Generate/manage term glossaries                         |
 
 ## LLM Providers
 
@@ -532,9 +579,9 @@ Switch with `finminutes config set active_asr <provider>`. Video files auto-extr
 
 ## Pipeline Modes
 
-| Mode   | Stages                             | LLM calls | Output                                |
-| ------ | ---------------------------------- | --------- | ------------------------------------- |
-| `fast` | preprocess only                    | No        | `{stem}_清洗稿.txt`                 |
+| Mode     | Stages                             | LLM calls | Output                                 |
+| -------- | ---------------------------------- | --------- | -------------------------------------- |
+| `fast` | preprocess only                    | No        | `{stem}_清洗稿.txt`                  |
 | `full` | + rewrite + summarize + fact-check | Yes       | `{stem}_校验稿.md` + coverage report |
 
 > `import-result` reports content completeness (deterministic, no LLM). Below the `coverage_threshold` (default 0.80) it auto-writes a debug prompt for the web-AI loop; `render -j` skips the review-draft intermediate entirely.
