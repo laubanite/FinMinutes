@@ -1297,42 +1297,44 @@ _ASR_SETUP_GUIDES = {
 }
 
 
-def _ffmpeg_install_guide() -> str:
+def _ffmpeg_install_guide(reason: str = "音频超过当前 ASR 提供商限制，需要切分转录") -> str:
+    """按平台返回 ffmpeg 安装指引；reason 说明缺 ffmpeg 的原因。"""
+    head = f"{reason}，但系统缺少 ffmpeg。\n"
     if sys.platform.startswith("win"):
         return (
-            "音频超过当前 ASR 提供商限制，需要切分转录，但系统缺少 ffmpeg。\n"
-            "\n"
-            "请安装 ffmpeg：\n"
-            "\n"
-            "方式一（推荐，winget）：\n"
-            "  winget install Gyan.FFmpeg\n"
-            "\n"
-            "方式二（手动下载）：\n"
-            "  1. 打开 https://www.gyan.dev/ffmpeg/builds/ 下载 release 版压缩包\n"
-            "  2. 解压到本地目录（例如 C:\\ffmpeg）\n"
-            "  3. 将 bin 目录加入 PATH：\n"
-            "     设置 → 系统 → 高级系统设置 → 环境变量 → Path → 新建\n"
-            "     添加：C:\\ffmpeg\\bin\n"
-            "\n"
-            "安装完成后请重新打开终端（让新的 PATH 生效），再重新执行命令。"
+            head
+            + "\n"
+            + "请安装 ffmpeg：\n"
+            + "\n"
+            + "方式一（推荐，winget）：\n"
+            + "  winget install Gyan.FFmpeg\n"
+            + "\n"
+            + "方式二（手动下载）：\n"
+            + "  1. 打开 https://www.gyan.dev/ffmpeg/builds/ 下载 release 版压缩包\n"
+            + "  2. 解压到本地目录（例如 C:\\ffmpeg）\n"
+            + "  3. 将 bin 目录加入 PATH：\n"
+            + "     设置 → 系统 → 高级系统设置 → 环境变量 → Path → 新建\n"
+            + "     添加：C:\\ffmpeg\\bin\n"
+            + "\n"
+            + "安装完成后请重新打开终端（让新的 PATH 生效），再重新执行命令。"
         )
     if sys.platform == "darwin":
         return (
-            "音频超过当前 ASR 提供商限制，需要切分转录，但系统缺少 ffmpeg。\n"
-            "\n"
-            "请安装 ffmpeg：\n"
-            "  brew install ffmpeg\n"
-            "\n"
-            "安装完成后请重新打开终端，再重新执行命令。"
+            head
+            + "\n"
+            + "请安装 ffmpeg：\n"
+            + "  brew install ffmpeg\n"
+            + "\n"
+            + "安装完成后请重新打开终端，再重新执行命令。"
         )
     return (
-        "音频超过当前 ASR 提供商限制，需要切分转录，但系统缺少 ffmpeg。\n"
-        "\n"
-        "请安装 ffmpeg：\n"
-        "  Debian/Ubuntu: sudo apt update && sudo apt install ffmpeg\n"
-        "  CentOS/RHEL:   sudo yum install ffmpeg\n"
-        "\n"
-        "安装完成后请重新打开终端，再重新执行命令。"
+        head
+        + "\n"
+        + "请安装 ffmpeg：\n"
+        + "  Debian/Ubuntu: sudo apt update && sudo apt install ffmpeg\n"
+        + "  CentOS/RHEL:   sudo yum install ffmpeg\n"
+        + "\n"
+        + "安装完成后请重新打开终端，再重新执行命令。"
     )
 
 
@@ -1390,7 +1392,7 @@ def _maybe_extract_audio(audio: str, output: str) -> str:
     try:
         ASRClient._check_ffmpeg()
     except FFmpegMissingError:
-        click.echo(_ffmpeg_install_guide(), err=True)
+        click.echo(_ffmpeg_install_guide("需要从视频提取音轨"), err=True)
         sys.exit(1)
 
     target = _resolve_output_path(audio, output, "_音频.mp3")

@@ -1,4 +1,5 @@
 import os
+import sys
 import tempfile
 from unittest.mock import MagicMock, patch
 
@@ -323,6 +324,20 @@ class TestNormalizePath:
 
     def test_empty_unchanged(self):
         assert _normalize_path("") == ""
+
+
+class TestFFmpegInstallGuide:
+    def test_default_chunking_reason(self):
+        from finminutes.cli import _ffmpeg_install_guide
+        msg = _ffmpeg_install_guide()
+        assert "音频超过当前 ASR 提供商限制，需要切分转录，但系统缺少 ffmpeg。" in msg
+        if sys.platform.startswith("win"):
+            assert "winget install Gyan.FFmpeg" in msg
+
+    def test_video_extraction_reason(self):
+        from finminutes.cli import _ffmpeg_install_guide
+        msg = _ffmpeg_install_guide("需要从视频提取音轨")
+        assert "需要从视频提取音轨，但系统缺少 ffmpeg。" in msg
 
 
 class TestInit:

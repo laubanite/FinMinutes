@@ -1,21 +1,5 @@
 <div align="center">
 
-# FinMinutes
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/downloads/) [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688.svg)](https://fastapi.tiangolo.com/)
-
-**AI 金融会议纪要 Agent —— 从视频/录音/转录稿到专业会议纪要的一站式工具。**
-
-**免费 LLM + 免费 ASR，一键流水线，拯救小黑工。**
-
-[简介](#简介) • [特性](#特性) • [安装](#安装) • [快速开始](#快速开始) • [免费 API Key](#免费-api-key-获取指南) • [命令详解](#命令详解) • [License](#license)
-
-<p align="center">
-中文 | <a href="#english">English</a>
-</p>
-
-</div>
-
 ## 简介
 
 FinMinutes 面向投研、尽调、路演、专家访谈等会议场景，把**视频 / 录音 / 转录稿**一键整理成专业纪要。
@@ -44,12 +28,28 @@ FinMinutes 面向投研、尽调、路演、专家访谈等会议场景，把**�
 
 要求：Python 3.10+，[ffmpeg](https://ffmpeg.org/)（视频提取音轨 / 大文件切分时需要）
 
+### pip 安装
+
+先安装 **Python 3.10+**（[python.org 下载](https://www.python.org/downloads/)），然后执行：
+
+```bash
+pip install finminutes
+```
+
+### 源码安装
+
 ```bash
 git clone https://github.com/laubanite/FinMinutes
 cd finminutes
 pip install -r requirements.txt
-pip install -e .          # 安装 finminutes 命令
+pip install -e .
 ```
+
+### 懒人安装：让 Agent 帮你装
+
+如果你不想手动操作，把下面这段话复制给 Claude Code / Codex / opencode / WorkBuddy 等任意 AI Agent，它会帮你完成全部安装：
+
+> 请帮我安装配置好 finminutes 这个 AI 会议纪要工具（https://github.com/laubanite/FinMinutes ，含 ffmpeg），验证 `finminutes --help` 能正常运行，然后告诉我下一步怎么做。
 
 ### 安装 ffmpeg
 
@@ -85,12 +85,6 @@ sudo yum install ffmpeg
 ```
 
 > 安装完成后请**重新打开终端**，让新的 PATH 生效，再重新执行命令。
-
-### 懒人安装：让 Agent 帮你装
-
-如果你不想手动操作，把下面这段话复制给 Claude Code / Codex / opencode / WorkBuddy 等任意 AI Agent，它会帮你完成全部安装：
-
-> 请帮我克隆并安装配置好 https://github.com/laubanite/FinMinutes 这个 AI 会议纪要工具（含 ffmpeg），验证 `finminutes --help` 能正常运行，然后告诉我下一步怎么做。
 
 ## 免费 API Key 获取指南
 
@@ -301,13 +295,13 @@ finminutes glossary --help        # 查看术语表子命令
 finminutes process -t 转录文件.txt [-b 背景.yaml] [-g 术语表] [-m 模式] [-o 输出]
 ```
 
-| 选项                 | 说明                                             |
-| -------------------- | ------------------------------------------------ |
-| `-t, --transcript` | 转录文本文件路径（必需）                         |
-| `-b, --background` | 背景信息 YAML 文件路径                           |
-| `-g, --glossary`   | 术语表 YAML 文件路径，或内置标签名（如 `semiconductor`） |
-| `-m, --mode`       | 流水线模式：`fast` / `full`（默认 `full`） |
-| `-o, --output`     | 输出前缀或目录路径                               |
+| 选项                 | 说明                                                      |
+| -------------------- | --------------------------------------------------------- |
+| `-t, --transcript` | 转录文本文件路径（必需）                                  |
+| `-b, --background` | 背景信息 YAML 文件路径                                    |
+| `-g, --glossary`   | 术语表 YAML 文件路径，或内置标签名（如`semiconductor`） |
+| `-m, --mode`       | 流水线模式：`fast` / `full`（默认 `full`）          |
+| `-o, --output`     | 输出前缀或目录路径                                        |
 
 **流水线模式：**
 
@@ -333,13 +327,13 @@ finminutes process -t 转录文件.txt [-b 背景.yaml] [-g 术语表] [-m 模�
 finminutes transcribe -a 音频文件.m4a [--no-process] [-b 背景] [-g 术语表] [-o 输出]
 ```
 
-| 选项                 | 说明                                      |
-| -------------------- | ----------------------------------------- |
-| `-a, --audio`      | 音频文件路径（.mp3/.wav/.m4a 等）（必需） |
-| `--no-process`     | 仅转录，不自动生成校验稿                  |
-| `-b, --background` | 背景信息 YAML 文件路径                    |
-| `-g, --glossary`   | 术语表 YAML 文件路径，或内置标签名（如 `semiconductor`） |
-| `-o, --output`     | 输出前缀或目录路径                        |
+| 选项                 | 说明                                                      |
+| -------------------- | --------------------------------------------------------- |
+| `-a, --audio`      | 音频文件路径（.mp3/.wav/.m4a 等）（必需）                 |
+| `--no-process`     | 仅转录，不自动生成校验稿                                  |
+| `-b, --background` | 背景信息 YAML 文件路径                                    |
+| `-g, --glossary`   | 术语表 YAML 文件路径，或内置标签名（如`semiconductor`） |
+| `-o, --output`     | 输出前缀或目录路径                                        |
 
 **ASR 提供商切换：**
 
@@ -523,8 +517,7 @@ FinMinutes — a one-stop tool that turns **video / audio / transcripts** into p
 ## Quick Start
 
 ```bash
-pip install -r requirements.txt
-pip install -e .
+pip install finminutes
 finminutes init                            # setup LLM + ASR providers & API keys
 finminutes process -t transcript.txt       # text → review draft
 finminutes transcribe -a meeting.m4a       # audio/video → transcript → review draft
