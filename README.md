@@ -1,5 +1,21 @@
 <div align="center">
 
+# FinMinutes
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/downloads/) [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688.svg)](https://fastapi.tiangolo.com/)
+
+**AI 金融会议纪要 Agent —— 从视频/录音/转录稿到专业会议纪要的一站式工具。**
+
+**免费 LLM + 免费 ASR，一键流水线，拯救小黑工。**
+
+[简介](#简介) • [特性](#特性) • [安装](#安装) • [快速开始](#快速开始) • [免费 API Key](#免费-api-key-获取指南) • [命令详解](#命令详解) • [License](#license)
+
+<p align="center">
+中文 | <a href="#english">English</a>
+</p>
+
+</div>
+
 ## 简介
 
 FinMinutes 面向投研、尽调、路演、专家访谈等会议场景，把**视频 / 录音 / 转录稿**一键整理成专业纪要。
@@ -49,7 +65,7 @@ pip install -e .
 
 如果你不想手动操作，把下面这段话复制给 Claude Code / Codex / opencode / WorkBuddy 等任意 AI Agent，它会帮你完成全部安装：
 
-> 请帮我安装配置好 finminutes 这个 AI 会议纪要工具（https://github.com/laubanite/FinMinutes ，含 ffmpeg），验证 `finminutes --help` 能正常运行，然后告诉我下一步怎么做。
+> 请帮我安装配置好 finminutes 这个 AI 会议纪要工具（https://github.com/laubanite/FinMinutes，含 ffmpeg），验证 `finminutes --help` 能正常运行，然后告诉我下一步怎么做。
 
 ### 安装 ffmpeg
 
