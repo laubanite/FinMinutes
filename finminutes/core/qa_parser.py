@@ -51,7 +51,30 @@ def _assemble_file(data: dict, body: str) -> str:
     return f"---\n{yaml_str}\n---\n\n{body.strip()}\n"
 
 
-def sync_frontmatter_with_body(file_path: str, qa_pairs: list[dict]):
+def _serialize_sections(sections) -> list[dict]:
+    """把 SectionContent（或 dict）序列化为 frontmatter 的 sections 结构。"""
+    out: list[dict] = []
+    for s in sections:
+        if isinstance(s, dict):
+            out.append(
+                {
+                    "title": s.get("title", ""),
+                    "content": s.get("content", ""),
+                    "citations": list(s.get("citations", [])),
+                }
+            )
+        else:  # SectionContent
+            out.append({"title": s.title, "content": s.content, "citations": list(s.citations)})
+    return out
+
+
+def sync_frontmatter_with_body(file_path: str, qa_pairs: list[dict], sections=None):
+    """把 frontmatter（properties）同步为正文最新内容。
+
+    正文是用户手动编辑的权威来源，frontmatter 可能落后于正文。
+    调用方在正文能解析出内容时调用本函数，确保 render 不再读到修改前的 properties。
+    sections 为 None 时只同步 qa_pairs，保留原 frontmatter 的 sections。
+    """
     with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
 
@@ -60,9 +83,46 @@ def sync_frontmatter_with_body(file_path: str, qa_pairs: list[dict]):
         return
 
     data["qa_pairs"] = qa_pairs
+    if sections is not None:
+        data["sections"] = _serialize_sections(sections)
     new_content = _assemble_file(data, body)
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(new_content)
+
+
+def parse_sections_from_body(body_text: str) -> list[dict]:
+    """从校验稿正文解析主题要点（「## 主题要点」下的 ### 小节）。
+
+    校验稿正文是用户手动编辑的权威来源，frontmatter（properties）可能落后。
+    解析「## 主题要点」之后、下一个「##」标题（或文件结束）之间的 ### 小节：
+    ### 为话题标题，其后到下一个 ### / 标题 / 文件结束之间的文本为内容。
+    标题缺失时（内容紧跟主题要点）也兜底收纳，避免丢内容。
+    """
+    if "## 主题要点" not in body_text:
+        return []
+    region = body_text.split("## 主题要点", 1)[1]
+    results: list[dict] = []
+    current_title: str | None = None
+    current: list[str] = []
+
+    def flush():
+        nonlocal current_title, current
+        if current_title is not None or any(line.strip() for line in current):
+            results.append({"title": current_title or "", "content": "\n".join(current).strip()})
+        current_title = None
+        current = []
+
+    for line in region.split("\n"):
+        stripped = line.strip()
+        if stripped.startswith("### "):
+            flush()
+            current_title = stripped[4:].strip()
+        elif stripped.startswith("## ") and stripped != "## 主题要点":
+            break  # 主题要点区结束（后续为其他顶级章节 / 问答区）
+        else:
+            current.append(line)
+    flush()
+    return [s for s in results if s["title"] or s["content"]]
 
 
 def parse_qa_pairs_from_body(body_text: str) -> list[dict]:

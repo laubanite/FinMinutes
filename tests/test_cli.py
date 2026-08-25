@@ -668,3 +668,73 @@ class TestRenderFromJson:
             result = self._run(runner, args)
             assert result.exit_code != 0, (args, result.output)
             assert "二选一" in result.output
+
+
+class TestRenderFromReview:
+    """render -r 应从校验稿正文（用户手动编辑的权威来源）渲染，
+    而非过期的 Front Matter（properties）。"""
+
+    def _run(self, runner, args):
+        with (
+            patch("finminutes.cli._get_config", return_value=MagicMock()),
+            patch("finminutes.cli._ensure_llm_config", return_value=True),
+        ):
+            gen = MagicMock()
+            gen.generate.return_value = "## 总结\n\n成品内容。"
+            with patch("finminutes.cli.FormalGenerator", return_value=gen):
+                return runner.invoke(main, args), gen
+
+    def _review_file(self, tmp_path, name="校验稿.md"):
+        # frontmatter 是"修改前"的旧内容；正文是用户手动改过的新内容
+        content = """---
+qa_pairs:
+- question: 旧问题
+  answer: 旧答案
+  asker: ''
+sections:
+- title: 旧话题
+  content: 旧内容
+---
+# 校验稿
+
+## 主题要点
+
+### 新话题
+新内容（用户编辑后）
+
+**Q**：新问题
+**A**：新答案
+"""
+        path = tmp_path / name
+        path.write_text(content, encoding="utf-8")
+        return path
+
+    def test_renders_from_body_not_stale_frontmatter(self, tmp_path):
+        """回归：此前主题要点始终读 frontmatter 的 sections（properties 是修改前的旧值），
+        用户改正文后 render 仍渲染旧内容。现在应以正文为准。"""
+        review_file = self._review_file(tmp_path)
+        runner = CliRunner()
+        result, gen = self._run(runner, ["render", "-r", str(review_file)])
+        assert result.exit_code == 0, result.output
+        # 喂给 LLM 的应是正文里的新内容，而非 frontmatter 旧内容
+        args = gen.generate.call_args
+        assert args is not None
+        sections = args.kwargs.get("sections")
+        assert sections, "应有主题要点"
+        assert sections[0].title == "新话题"
+        assert "新内容" in sections[0].content
+        # FormalGenerator.generate(qa_pairs, template, sections=...) —— qa_pairs 是位置参数
+        qa = args.args[0]
+        assert qa and qa[0]["question"] == "新问题"
+
+    def test_frontmatter_resynced_to_body(self, tmp_path):
+        """正文权威时，properties 应被回写为正文最新内容，避免下次读取仍为旧值。"""
+        review_file = self._review_file(tmp_path)
+        runner = CliRunner()
+        result, _ = self._run(runner, ["render", "-r", str(review_file)])
+        assert result.exit_code == 0, result.output
+        text = review_file.read_text(encoding="utf-8")
+        assert "新问题" in text
+        assert "新话题" in text
+        assert "新内容（用户编辑后）" in text
+

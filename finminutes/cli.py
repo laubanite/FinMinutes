@@ -13,7 +13,7 @@ from finminutes.core.pipeline import Pipeline
 from finminutes.core.review_renderer import ReviewRenderer
 from finminutes.core.formal_renderer import FormalGenerator
 from finminutes.core.glossary_generator import generate_glossary, save_glossary, _read_text
-from finminutes.core.qa_parser import parse_qa_pairs_from_body, sync_frontmatter_with_body, _split_frontmatter
+from finminutes.core.qa_parser import parse_qa_pairs_from_body, parse_sections_from_body, sync_frontmatter_with_body, _split_frontmatter
 from finminutes.core.template_loader import TemplateLoader
 from finminutes.core.background_loader import BackgroundLoader
 from finminutes.core.rewriter import format_glossary_rules
@@ -655,27 +655,62 @@ def render(review, json_path, template, output):
             click.echo("错误：校验稿格式不正确（缺少 YAML 头）", err=True)
             sys.exit(1)
 
-        qa_pairs = data.get("qa_pairs", [])
+        from finminutes.core.summarizer import SectionContent
+        raw_qa = data.get("qa_pairs", [])
         raw_sections = data.get("sections", [])
 
+        def _to_sections(raw):
+            return [
+                SectionContent(
+                    title=s.get("title", ""),
+                    content=s.get("content", ""),
+                    citations=s.get("citations", []),
+                )
+                for s in raw if isinstance(s, dict)
+            ]
+
+        # 校验稿正文是用户手动编辑的权威来源：上方 Front Matter（properties）可能落后于正文，
+        # 因此正文能解析出 Q&A 或主题要点时，一律以正文为准，并把 Front Matter 回写为正文最新内容。
         body_pairs = parse_qa_pairs_from_body(body)
+        body_sections = parse_sections_from_body(body)
+        has_section_marker = "## 主题要点" in body
+
+        # —— Q&A：正文优先 ——
         if body_pairs:
             qa_pairs = body_pairs
-            sync_frontmatter_with_body(review, qa_pairs)
-        elif not qa_pairs and not raw_sections:
-            click.echo("错误：校验稿中未找到任何 Q&A 数据或主题要点（正文解析失败，Front Matter 也为空）。请检查校验稿格式是否正确。", err=True)
+        elif not raw_qa and not raw_sections:
+            click.echo(
+                "错误：校验稿中未找到任何 Q&A 数据或主题要点（正文解析失败，Front Matter 也为空）。"
+                "请检查校验稿格式是否正确。",
+                err=True,
+            )
             sys.exit(1)
-        elif not qa_pairs:
+        elif not raw_qa:
             click.echo("[警告]正文无 Q&A 数据，使用 Front Matter 中的主题要点（纯独白模式）。", err=True)
+            qa_pairs = raw_qa
         else:
             click.echo("[警告]正文解析失败，使用 Front Matter 中的数据。请检查校验稿正文格式。", err=True)
+            qa_pairs = raw_qa
 
-        # 主题要点（sections）：独白信息必须进入成品稿（speech/both 模式）
-        from finminutes.core.summarizer import SectionContent
-        sections = [
-            SectionContent(title=s.get("title", ""), content=s.get("content", ""), citations=s.get("citations", []))
-            for s in raw_sections if isinstance(s, dict)
-        ]
+        # —— 主题要点（sections）：正文优先；正文含标记但解析失败则回退 Front Matter ——
+        if has_section_marker and body_sections:
+            sections = [
+                SectionContent(title=s["title"], content=s["content"], citations=s.get("citations", []))
+                for s in body_sections
+            ]
+        elif has_section_marker and raw_sections:
+            click.echo("[警告]正文主题要点解析失败，使用 Front Matter 中的主题要点。", err=True)
+            sections = _to_sections(raw_sections)
+        else:
+            sections = _to_sections(raw_sections)
+
+        # 正文权威（能解析出 Q&A 或主题要点）时，把 Front Matter 同步为正文最新内容
+        if body_pairs or (has_section_marker and body_sections):
+            sync_frontmatter_with_body(
+                review,
+                qa_pairs,
+                sections if (has_section_marker and body_sections) else None,
+            )
 
     try:
         loader = TemplateLoader(subdir="formal")
