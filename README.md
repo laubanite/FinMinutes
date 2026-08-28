@@ -2,7 +2,7 @@
 
 # FinMinutes
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/downloads/) [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688.svg)](https://fastapi.tiangolo.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/downloads/) [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688.svg)](https://fastapi.tiangolo.com/) [![Powered by OrcaRouter](https://img.shields.io/badge/Powered_by-OrcaRouter-2563eb)](https://www.orcarouter.ai/ref/ref_fc88ee354797b100a58a)
 
 **AI 金融会议纪要 Agent —— 从视频/录音/转录稿到专业会议纪要的一站式工具。**
 
@@ -34,7 +34,7 @@ FinMinutes 面向投研、尽调、路演、专家访谈等会议场景，把**�
 - **语音转写**：免费 Groq Whisper / 硅基流动 SenseVoice；视频自动提取音轨；长音频自动切分
 - **网页版 AI 协同**：0 成本把转录稿喂给豆包/DeepSeek 等网页版AI，结果导回校验稿
 - **内容完整度检查**：数字/事实保留率自动打分，不达标自动生成调试 prompt
-- **多 LLM 切换**：免费档优先、限流自动降级（fallback）；支持 Anthropic / 任意 OpenAI 兼容端点
+- **多 LLM 切换**：免费档优先、限流自动降级（fallback）；支持 Anthropic / 任意 OpenAI 兼容端点（如 OrcaRouter）
 - **术语表 + 背景信息**：从访谈材料自动生成术语表、纠正 ASR 错词，提升纪要准确度
 - **ASR 格式归一化**：飞书妙记/讯飞/Whisper 等任意转录稿直接可用
 - **模板定制**：成品稿章节结构与语言风格可自定义
@@ -111,6 +111,7 @@ FinMinutes 全流程可零成本跑通：LLM 用免费档、ASR 用免费提供�
 | 提供商                                                        | 免费额度                                   | 获取方式                                                                               |
 | ------------------------------------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------- |
 | [**OpenRouter**](https://openrouter.ai)（默认，推荐）    | 提供免费模型，免费档：20 次/分钟、50 次/天 | 注册[openrouter.ai](https://openrouter.ai) → 右上角头像 → Keys → Create Key          |
+| [**OrcaRouter**](https://www.orcarouter.ai/ref/ref_fc88ee354797b100a58a) | 多模型聚合，按量计费（价格以官网为准） | 注册[orcarouter.ai](https://www.orcarouter.ai/ref/ref_fc88ee354797b100a58a) → API Keys → 创建 |
 | [**硅基流动 SiliconFlow**](https://cloud.siliconflow.cn) | 提供免费模型（如 GLM-4-9B）                | 注册[cloud.siliconflow.cn](https://cloud.siliconflow.cn) → 控制台 → API 密钥 → 新建  |
 | [**DeepSeek**](https://platform.deepseek.com/api_keys)   | 付费                                       | 注册[platform.deepseek.com](https://platform.deepseek.com/api_keys) → API Keys → 创建 |
 | [**OpenAI**](https://platform.openai.com)                | 付费                                       | [platform.openai.com](https://platform.openai.com) → API Keys → Create                |
@@ -524,7 +525,7 @@ FinMinutes — a one-stop tool that turns **video / audio / transcripts** into p
 - **Speech-to-text**: free Groq Whisper / SiliconFlow SenseVoice; auto-extracts audio from video; auto-chunks long files
 - **Web-AI loop**: 0-cost — export a prompt pack, paste it into Doubao / DeepSeek web AIs, import the result back
 - **Completeness check**: number/fact retention scoring (deterministic, no LLM); auto-writes a debug prompt when below threshold
-- **Multiple LLMs**: free tier first with auto-fallback on rate limits; supports Anthropic / any OpenAI-compatible endpoint
+- **Multiple LLMs**: free tier first with auto-fallback on rate limits; supports Anthropic / any OpenAI-compatible endpoint (e.g. OrcaRouter)
 - **Glossary + background**: auto-generate glossaries from interview materials, correct ASR errors
 - **ASR format normalization**: transcripts from Feishu / iFlytek / Whisper etc. work directly
 - **Custom templates**: final-draft structure and style are configurable
@@ -550,6 +551,7 @@ FinMinutes runs free end-to-end: free-tier LLM + free ASR providers. All keys ca
 | Provider                                                            | Free tier                                                               | Get a key                                                                                      |
 | ------------------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | [**OpenRouter**](https://openrouter.ai) (default, recommended) | Free tier: 20 req/min, 50 req/day (accounts with < $10 lifetime credit) | Sign up at[openrouter.ai](https://openrouter.ai) → Keys → Create Key                          |
+| [**OrcaRouter**](https://www.orcarouter.ai/ref/ref_fc88ee354797b100a58a) | Multi-model gateway, pay-as-you-go (see website)                         | Sign up at[orcarouter.ai](https://www.orcarouter.ai/ref/ref_fc88ee354797b100a58a) → API Keys → Create |
 | [**SiliconFlow**](https://cloud.siliconflow.cn)                | Free models (e.g. GLM-4-9B)                                             | Sign up at[cloud.siliconflow.cn](https://cloud.siliconflow.cn) → API Keys → Create            |
 | [**DeepSeek**](https://platform.deepseek.com/api_keys)         | Paid                                                                    | Sign up at[platform.deepseek.com](https://platform.deepseek.com/api_keys) → API Keys → Create |
 | [**OpenAI**](https://platform.openai.com)                      | Paid                                                                    | [platform.openai.com](https://platform.openai.com) → API Keys → Create                        |

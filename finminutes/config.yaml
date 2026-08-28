@@ -47,6 +47,16 @@ llm_providers:
     rewrite_chunk_size: 20000
     qa_chunk_size: 30000
 
+  # OrcaRouter：OpenAI 兼容聚合网关（Built With 合作）。注册请走 README 里的推广链接。
+  orcarouter:
+    provider: "openai"
+    api_key: "${ORCAROUTER_API_KEY}"
+    base_url: "https://api.orcarouter.ai/v1"
+    model: "gpt-4o"
+    max_tokens: 32000
+    rewrite_chunk_size: 20000
+    qa_chunk_size: 40000
+
   siliconflow:
     provider: "siliconflow"
     api_key: "${SILICONFLOW_API_KEY}"
