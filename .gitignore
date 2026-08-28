@@ -13,6 +13,8 @@ test_run/
 *_bg.yaml
 *术语.yaml
 *_音频.mp3
+*.mp4
+notes.txt
 
 # ---- 敏感配置 ----
 finminutes/data/backgrounds/cx_bg.yaml
@@ -30,6 +32,7 @@ dist/
 
 # ---- 测试缓存 ----
 .pytest_cache/
+.pytest_tmp/
 .mypy_cache/
 .ruff_cache/
 .coverage
@@ -53,3 +56,9 @@ Thumbs.db
 *.tmp
 *.bak
 *~
+
+docs/
+logo/
+rednote/
+demo/
+
