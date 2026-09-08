@@ -14,24 +14,17 @@ FinMinutes 面向投研、尽调、路演、专家访谈等会议场景，把**�
 
 ## 效果
 
-<table>
-  <tr>
-    <td width="50%"><img src="showcase/01-workflow.png" alt="从视频/录音到会议纪要的全流程"></td>
-    <td width="50%"><img src="showcase/02-dual-draft.png" alt="校验稿与成品稿对照"></td>
-  </tr>
-  <tr>
-    <td align="center"><b>① 全流程</b>：视频 / 录音 → 转录稿 → 校验稿 → 成品稿</td>
-    <td align="center"><b>② 双稿闭环</b>：校验稿保真核对，成品稿可直接交付</td>
-  </tr>
-  <tr>
-    <td><img src="showcase/03-zero-cost.png" alt="0 成本跑通全流程"></td>
-    <td><img src="showcase/04-web-ai.png" alt="网页版 AI 协同兜底"></td>
-  </tr>
-  <tr>
-    <td align="center"><b>③ 零成本</b>：免费 LLM + 免费 ASR，单场约 16 次调用</td>
-    <td align="center"><b>④ 配额兜底</b>：免费档用尽转网页版 AI 协同，不停工</td>
-  </tr>
-</table>
+<p align="center">
+  <img src="showcase/02-dual-draft.png" alt="校验稿与成品稿对照" width="600">
+  <br>
+  <b>双稿闭环</b>：校验稿保真核对，成品稿可直接交付
+</p>
+
+<p align="center">
+  <img src="showcase/04-web-ai.png" alt="网页版 AI 协同兜底" width="600">
+  <br>
+  <b>配额兜底</b>：免费档用尽转网页版 AI 协同，不停工
+</p>
 
 ## 特性
 
