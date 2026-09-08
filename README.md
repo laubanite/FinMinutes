@@ -1,21 +1,5 @@
 <div align="center">
 
-# FinMinutes
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/downloads/) [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688.svg)](https://fastapi.tiangolo.com/) [![Powered by OrcaRouter](https://img.shields.io/badge/Powered_by-OrcaRouter-2563eb)](https://www.orcarouter.ai/ref/ref_fc88ee354797b100a58a)
-
-**AI 金融会议纪要 Agent —— 从视频/录音/转录稿到专业会议纪要的一站式工具。**
-
-**免费 LLM + 免费 ASR，一键流水线，拯救小黑工。**
-
-[简介](#简介) • [特性](#特性) • [安装](#安装) • [快速开始](#快速开始) • [免费 API Key](#免费-api-key-获取指南) • [命令详解](#命令详解) • [License](#license)
-
-<p align="center">
-中文 | <a href="#english">English</a>
-</p>
-
-</div>
-
 ## 简介
 
 FinMinutes 面向投研、尽调、路演、专家访谈等会议场景，把**视频 / 录音 / 转录稿**一键整理成专业纪要。
@@ -27,6 +11,27 @@ FinMinutes 面向投研、尽调、路演、专家访谈等会议场景，把**�
 - **零成本跑通全流程**：提供免费 LLM + 免费 ASR，另有网页版 AI 协同兜底，免费配额用完也不停工
 - **数字不丢**：内容完整度自动检查（数字/事实保留率），不达标自动生成调试 prompt 让你迭代补全
 - **双稿闭环**：校验稿保真（完整 Q&A + 主题要点），成品稿支持定制模板、可直接交付；改一份文件即可重渲染
+
+## 效果
+
+<table>
+  <tr>
+    <td width="50%"><img src="showcase/01-workflow.png" alt="从视频/录音到会议纪要的全流程"></td>
+    <td width="50%"><img src="showcase/02-dual-draft.png" alt="校验稿与成品稿对照"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>① 全流程</b>：视频 / 录音 → 转录稿 → 校验稿 → 成品稿</td>
+    <td align="center"><b>② 双稿闭环</b>：校验稿保真核对，成品稿可直接交付</td>
+  </tr>
+  <tr>
+    <td><img src="showcase/03-zero-cost.png" alt="0 成本跑通全流程"></td>
+    <td><img src="showcase/04-web-ai.png" alt="网页版 AI 协同兜底"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>③ 零成本</b>：免费 LLM + 免费 ASR，单场约 16 次调用</td>
+    <td align="center"><b>④ 配额兜底</b>：免费档用尽转网页版 AI 协同，不停工</td>
+  </tr>
+</table>
 
 ## 特性
 
@@ -56,7 +61,7 @@ pip install finminutes
 
 ```bash
 git clone https://github.com/laubanite/FinMinutes
-cd finminutes
+cd FinMinutes
 pip install -r requirements.txt
 pip install -e .
 ```
@@ -108,13 +113,13 @@ FinMinutes 全流程可零成本跑通：LLM 用免费档、ASR 用免费提供�
 
 ### LLM（生成纪要）
 
-| 提供商                                                        | 免费额度                                   | 获取方式                                                                               |
-| ------------------------------------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------- |
-| [**OpenRouter**](https://openrouter.ai)（默认，推荐）    | 提供免费模型，免费档：20 次/分钟、50 次/天 | 注册[openrouter.ai](https://openrouter.ai) → 右上角头像 → Keys → Create Key          |
-| [**OrcaRouter**](https://www.orcarouter.ai/ref/ref_fc88ee354797b100a58a) | 多模型聚合，按量计费（价格以官网为准） | 注册[orcarouter.ai](https://www.orcarouter.ai/ref/ref_fc88ee354797b100a58a) → API Keys → 创建 |
-| [**硅基流动 SiliconFlow**](https://cloud.siliconflow.cn) | 提供免费模型（如 GLM-4-9B）                | 注册[cloud.siliconflow.cn](https://cloud.siliconflow.cn) → 控制台 → API 密钥 → 新建  |
-| [**DeepSeek**](https://platform.deepseek.com/api_keys)   | 付费                                       | 注册[platform.deepseek.com](https://platform.deepseek.com/api_keys) → API Keys → 创建 |
-| [**OpenAI**](https://platform.openai.com)                | 付费                                       | [platform.openai.com](https://platform.openai.com) → API Keys → Create                |
+| 提供商                                                                        | 免费额度                                   | 获取方式                                                                                       |
+| ----------------------------------------------------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| [**OpenRouter**](https://openrouter.ai)（默认，推荐）                    | 提供免费模型，免费档：20 次/分钟、50 次/天 | 注册[openrouter.ai](https://openrouter.ai) → 右上角头像 → Keys → Create Key                  |
+| [**OrcaRouter**](https://www.orcarouter.ai/ref/ref_fc88ee354797b100a58a) | 多模型聚合，按量计费（价格以官网为准）     | 注册[orcarouter.ai](https://www.orcarouter.ai/ref/ref_fc88ee354797b100a58a) → API Keys → 创建 |
+| [**硅基流动 SiliconFlow**](https://cloud.siliconflow.cn)                 | 提供免费模型（如 GLM-4-9B）                | 注册[cloud.siliconflow.cn](https://cloud.siliconflow.cn) → 控制台 → API 密钥 → 新建          |
+| [**DeepSeek**](https://platform.deepseek.com/api_keys)                   | 付费                                       | 注册[platform.deepseek.com](https://platform.deepseek.com/api_keys) → API Keys → 创建         |
+| [**OpenAI**](https://platform.openai.com)                                | 付费                                       | [platform.openai.com](https://platform.openai.com) → API Keys → Create                        |
 
 ### ASR（语音转写）
 
@@ -167,41 +172,6 @@ finminutes process -t 会议录音_转录稿.txt
 **校验稿** —— 尽量保真转录：保留完整 Q&A 与主题要点，数字原样保留，供对照录音逐条核对：
 
 ```
----
-qa_pairs:
-- question: 第一个关于新一代产品架构，因为这块我不知道XX公司内部现在是不是有一些技术储备或者专利的一些研究，这块大概是怎么样？您能介绍一下吗？
-  answer: 研究的新一代架构已经算是有一定的落地了。最早是在外部晶圆厂里面去做，现在已经有一定的突破了。主要方向是从传统架构演进，单元面积确实是缩减了约 XX，通过这样的方式来解决面积方面的问题。毕竟没有先进工艺嘛，所以说在整个大的方向上面是有一定的突破的。良率比较低，目前可能只有将近 XX% 的良率，处于一个没有量产的阶段，但整个大的方向上来说是没有问题的。东西是有专利的，我们处理这段是比较早的。
-  asker: 提问者
-  timerange: ''
-- question: 那XX因为这段时间他们有发相关的新闻，他们也在走这个技术路线方向，那我是不是也可以理解他们也是在良率这块可能还是有比较大的提升空间，而不是说底层的技术方案还没有定型？
-  answer: 方案技术已经定型了，没有疑问。大家都是在提高良率。
-  asker: 提问者
-  timerange: ''
-- question: XX他们因为他们有先进工艺嘛，他们在有先进工艺的情况下，是不是他们的新一代架构方案会比国内这几家会有更优的一些密度、什么各方面一些性能指标？
-  answer: 本来不是一个维度，不是一个等级的。密度来说他们只是为了提高上限，而我们是为了通过工艺的限制来跟他们达到同样的制程角度。他们在同样的尺寸的密度上面上限更高，而且性能更优，不是在一个游戏里面去做的。
-  asker: 提问者
-  timerange: ''
-- question: 既然咱们现在也是能够绕开先进工艺的方案，先天来说成本和良率可能会有一些区别。咱们的，因为现在方案定了，咱们的目标良率大概会在多少？
-  answer: 目标良率大概是在XX%。
-  asker: 提问者
-  timerange: ''
-- question: 有预计几年能够实现吗？比如说三年还是怎么样？因为我们看XX什么都把新一代架构的量产时间往后挪了。
-  answer: 当然需要，最起码需要X到X年左右的时间，这个周期是非常长的，没办法的。
-  asker: 提问者
-  timerange: ''
-- question: 您介绍说是早期是在外部晶圆厂做，现在是回到咱们自己的产线做了？
-  answer: 没错。
-  asker: 提问者
-  timerange: ''
-- question: 第三个现在咱们目前高端产品的整体的进度是怎么样？因为我们也有看一些公开信息，说应该是新一代产品是马上要上了，还是怎么样？
-  answer: XX是已经量产的。XX今年已经能出，接下来慢慢的就会往XX方向走。如果未来新一代架构的技术比较成熟，也有可能会通过像XX这些技术，可能需要一些时间的。
-  asker: 提问者
-  timerange: ''
-- question: 现在咱们主要是给谁供货，或者说有一些潜在的客户是国内的还是海外的？
-  answer: ''
-  asker: 提问者
-  timerange: ''
----
 # 校验稿
 
 **Q**：第一个关于新一代产品架构，因为这块我不知道XX公司内部现在是不是有一些技术储备或者专利的一些研究，这块大概是怎么样？您能介绍一下吗？
@@ -504,98 +474,3 @@ pytest tests/ -q
 ## License
 
 MIT
-
----
-
-# English
-
-FinMinutes — a one-stop tool that turns **video / audio / transcripts** into professional meeting minutes for investment research, due diligence, roadshows, and expert interviews.
-
-**The problem**: a single interview takes half a day to transcribe, polish, and fact-check by hand. FinMinutes compresses it to three steps — **transcribe/import → listen once and verify against the review draft → deliver the polished final draft**.
-
-**Key advantages**:
-
-- **Runs free end-to-end**: free LLM + free ASR, with a web-AI loop as a fallback when free quotas run out
-- **Numbers are never lost**: automatic content-completeness check (number/fact retention); below threshold it auto-writes a debug prompt so you can iterate
-- **Two-draft workflow**: the review draft preserves the full Q&A + key points for verification; the final draft is polished and deliverable — edit one file and re-render
-
-## Features
-
-- **Two-draft loop**: fidelity review draft + deliverable final draft; edit one file, re-render
-- **Speech-to-text**: free Groq Whisper / SiliconFlow SenseVoice; auto-extracts audio from video; auto-chunks long files
-- **Web-AI loop**: 0-cost — export a prompt pack, paste it into Doubao / DeepSeek web AIs, import the result back
-- **Completeness check**: number/fact retention scoring (deterministic, no LLM); auto-writes a debug prompt when below threshold
-- **Multiple LLMs**: free tier first with auto-fallback on rate limits; supports Anthropic / any OpenAI-compatible endpoint (e.g. OrcaRouter)
-- **Glossary + background**: auto-generate glossaries from interview materials, correct ASR errors
-- **ASR format normalization**: transcripts from Feishu / iFlytek / Whisper etc. work directly
-- **Custom templates**: final-draft structure and style are configurable
-- **Zero learning curve**: `finminutes --help` + interactive prompts at every step
-
-## Quick Start
-
-```bash
-pip install finminutes
-finminutes init                            # setup LLM + ASR providers & API keys
-finminutes process -t transcript.txt       # text → review draft
-finminutes transcribe -a meeting.m4a       # audio/video → transcript → review draft
-finminutes render -r review.md             # review draft → final draft
-finminutes render -j result.json           # web-AI JSON → final draft directly
-```
-
-## Free API Keys
-
-FinMinutes runs free end-to-end: free-tier LLM + free ASR providers. All keys can be entered interactively via `finminutes init` (recommended), or set as environment variables (see Quick Start).
-
-### LLM (minutes generation)
-
-| Provider                                                            | Free tier                                                               | Get a key                                                                                      |
-| ------------------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| [**OpenRouter**](https://openrouter.ai) (default, recommended) | Free tier: 20 req/min, 50 req/day (accounts with < $10 lifetime credit) | Sign up at[openrouter.ai](https://openrouter.ai) → Keys → Create Key                          |
-| [**OrcaRouter**](https://www.orcarouter.ai/ref/ref_fc88ee354797b100a58a) | Multi-model gateway, pay-as-you-go (see website)                         | Sign up at[orcarouter.ai](https://www.orcarouter.ai/ref/ref_fc88ee354797b100a58a) → API Keys → Create |
-| [**SiliconFlow**](https://cloud.siliconflow.cn)                | Free models (e.g. GLM-4-9B)                                             | Sign up at[cloud.siliconflow.cn](https://cloud.siliconflow.cn) → API Keys → Create            |
-| [**DeepSeek**](https://platform.deepseek.com/api_keys)         | Paid                                                                    | Sign up at[platform.deepseek.com](https://platform.deepseek.com/api_keys) → API Keys → Create |
-| [**OpenAI**](https://platform.openai.com)                      | Paid                                                                    | [platform.openai.com](https://platform.openai.com) → API Keys → Create                        |
-
-### ASR (speech-to-text)
-
-| Provider                                                         | Free tier                           | Get a key                                                                           |
-| ---------------------------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------- |
-| [**Groq**](https://console.groq.com) (default, recommended) | Free Whisper, files ≤ 25MB         | Sign up at[console.groq.com](https://console.groq.com) → API Keys → Create API Key |
-| **SiliconFlow**                                            | Free SenseVoiceSmall, files ≤ 50MB | Same as above (one SiliconFlow key works for both LLM and ASR)                      |
-
-> **Zero-cost tip**: to run the whole flow, one **Groq key (ASR)** + one **OpenRouter key (LLM)** is all you need — audio → transcript → review draft → final draft. When free quotas run out, the web-AI loop (`export-prompt` / `import-result`) is a fully free, unlimited fallback.
-
-## Commands
-
-| Command           | Description                                             |
-| ----------------- | ------------------------------------------------------- |
-| `init`          | Interactive setup wizard (LLM + ASR)                    |
-| `process`       | Transcript → review draft                              |
-| `transcribe`    | Audio/video → transcript (+ optional review draft)     |
-| `render`        | Review draft → final draft (`-r` draft, `-j` JSON) |
-| `export-prompt` | Build a web-AI prompt pack from a transcript            |
-| `import-result` | Parse web-AI JSON → review draft + completeness report |
-| `config`        | show / set / add / remove / set-key / list              |
-| `glossary`      | Generate/manage term glossaries                         |
-
-## LLM Providers
-
-- **OpenRouter** (`openrouter_free`, default): free tier, 20 req/min · 50 req/day
-- **DeepSeek**, **OpenAI**, **SiliconFlow** (free tier), **Anthropic** (Claude)
-- Any **OpenAI-compatible** endpoint via a custom provider; **fallback** chain auto-degrades on rate limits
-
-## ASR Providers
-
-- **Groq** (`groq`, default): `whisper-large-v3-turbo`, 25MB file limit
-- **SiliconFlow** (`siliconflow`): `FunAudioLLM/SenseVoiceSmall`, 50MB file limit
-
-Switch with `finminutes config set active_asr <provider>`. Video files auto-extract their audio track; files over the limit are auto-chunked (requires ffmpeg).
-
-## Pipeline Modes
-
-| Mode     | Stages                             | LLM calls | Output                                 |
-| -------- | ---------------------------------- | --------- | -------------------------------------- |
-| `fast` | preprocess only                    | No        | `{stem}_清洗稿.txt`                  |
-| `full` | + rewrite + summarize + fact-check | Yes       | `{stem}_校验稿.md` + coverage report |
-
-> `import-result` reports content completeness (deterministic, no LLM). Below the `coverage_threshold` (default 0.80) it auto-writes a debug prompt for the web-AI loop; `render -j` skips the review-draft intermediate entirely.

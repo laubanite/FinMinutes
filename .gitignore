@@ -15,6 +15,9 @@ test_run/
 *_音频.mp3
 *.mp4
 notes.txt
+*.mp3
+*.m4a
+*.docx
 
 # ---- 敏感配置 ----
 finminutes/data/backgrounds/cx_bg.yaml
