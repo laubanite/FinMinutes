@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/downloads/) [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688.svg)](https://fastapi.tiangolo.com/) [![Powered by OrcaRouter](https://img.shields.io/badge/Powered_by-OrcaRouter-2563eb)](https://www.orcarouter.ai/ref/ref_fc88ee354797b100a58a)
 
-**AI Meeting Minutes Agent — One-stop tool that turns video/audio/transcripts into professional meeting minutes.**
+**AI Meeting Minutes Workflow — One-stop tool that turns video/audio/transcripts into professional meeting minutes.**
 
 **Free LLM + Free ASR, one-click pipeline.**
 
