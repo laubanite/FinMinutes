@@ -21,6 +21,27 @@ def format_glossary_rules(glossary: Glossary) -> str:
     return "\n".join(lines) or "（无）"
 
 
+def format_current_date() -> str:
+    """当前日期（注入 prompt 用）。
+
+    不注入时 LLM 会用自己的（已过期的）内部时间解析相对时间，实测把「去年」
+    错写成「2023年」——在金融纪要里这属于凭空编造事实，必须堵住。
+    """
+    from datetime import date
+
+    d = date.today()
+    return f"{d.year}年{d.month}月{d.day}日"
+
+
+# 相对时间保全规则：所有会改写文本的 prompt 都必须带上
+# （改写 / 块提取 / QA 提取 / 成品稿渲染），否则模型会把「去年」落成具体年份。
+RELATIVE_TIME_RULE = (
+    "**相对时间必须原样保留**：禁止把「去年/今年/明年/前年/上月/本月/下周/本季度/一季度」"
+    "等相对时间改写成具体年份或月份——把「去年」写成「2023年」属于编造事实，是最严重的错误。"
+    "原文说「去年」就写「去年」；只有原文明确说出具体年份时才写具体年份。"
+)
+
+
 def chunk_text(text: str, max_chars: int = 2000, overlap: int = 200) -> list[str]:
     if len(text) <= max_chars:
         return [text]
@@ -158,9 +179,12 @@ class Rewriter:
 ## 术语纠错规则
 {glossary_rules}
 
+## 当前日期
+{current_date}
+
 ## 要求
 1. 根据术语表纠正金融专业术语的ASR识别错误；必要时根据背景信息补充分析师注释（标注为[分析师注：...]）
-2. **把口语化表达改写为书面语**：删除口头语和语气词（嗯、啊、就是说、蛮、其实、基本上、的话等），把口语短句重组为规范、简练的书面句子（例：「我们跟中芯绍兴合作还是蛮紧密的」→「与中芯绍兴合作紧密」）
+2. **把口语化表达改写为书面语**：删除口头语和语气词（嗯、啊、就是说、蛮、其实、基本上、的话等），把口语短句重组为规范、简练的书面句子（例：「我们跟这家晶圆厂合作还是蛮紧密的」→「与该晶圆厂合作紧密」）
 3. **必须保留全部实质信息**：数字、百分比、金额、公司名、专有名词、事件、时间、因果逻辑一条都不能删减、概括或遗漏；禁止添加原文没有的信息；改写后应比原文明显简短（冗余被去除），但信息量不减
 4. 如原文有说话人标签（如「张三：」），保留以辅助核对
 5. **按出现顺序把内容聚合为 2-4 个较大的话题块**（如：市场与竞争格局、产品与技术、产能与供应链、融资与规划），不要切得过细
@@ -170,6 +194,7 @@ class Rewriter:
    - "mixed"：同一块内既有陈述又有问答，此时 text 只写陈述部分，问答部分不要写入（问答会单独提取）
    - 注意区分修辞性自问自答（如"为什么要做模组化？因为客户要小型化"）：这是陈述，标 narration，不算问答
 7. **全文必须使用简体中文**：标题与正文一律简体，禁止繁体字（如"为/产/与/务/经/营/规/划/财/务/预/测/验"等需写为简体）
+8. {relative_time_rule}
 
 ## 输出格式
 只输出有效的JSON数组（不要包含任何其他文字或markdown标记），按出现顺序：
@@ -196,6 +221,7 @@ class Rewriter:
 
         bg_str = self._format_background()
         glossary_rules = self._format_glossary_rules()
+        current_date = format_current_date()
         chunks = chunk_text(transcript, max_chars=self._chunk_size)
         total = len(chunks)
         t0 = time.time()
@@ -206,6 +232,8 @@ class Rewriter:
             prompt = self.PROMPT_TEMPLATE.format(
                 background=bg_str,
                 glossary_rules=glossary_rules,
+                current_date=current_date,
+                relative_time_rule=RELATIVE_TIME_RULE,
                 chunk=chunk,
             )
             response = self._llm.generate(prompt, retry_callback=self._on_retry)

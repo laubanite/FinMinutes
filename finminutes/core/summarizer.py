@@ -5,20 +5,88 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-from finminutes.core.models import Template, Glossary
-from finminutes.core.rewriter import chunk_text, parse_blocks, format_glossary_rules
+from finminutes.core.models import Template, Glossary, Background
+from finminutes.core.rewriter import (
+    RELATIVE_TIME_RULE,
+    chunk_text,
+    format_current_date,
+    format_glossary_rules,
+    parse_blocks,
+)
 
 _JSON_RE = re.compile(r"(\{.*\})", re.DOTALL)
 
 EXTRACT_JSON_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 
 
+# ---------------------------------------------------------------------------
+# 提问者标识：姓名填不出时退到角色
+# ---------------------------------------------------------------------------
+#
+# 转录稿是纯文本（ASR 固定 response_format="text"），没有 speaker 标签，
+# 所以 `asker`（提问者姓名）实测永远是空串——某场访谈的 26 条问答 26 条全空。
+# 但「这一问是访谈方提的还是项目方提的」这个判断 LLM 做得出来，
+# 而对一级市场访谈来说这个区分已经够用（返投要求是政府方问的，产能是企业方答的）。
+#
+# 所以分两个字段：
+#   asker      —— 姓名，有说话人信息时才填得出来
+#   asker_role —— 角色枚举，纯文本也能判断
+# 渲染时优先姓名，其次角色，都没有才显示「（未指明）」。
+
+ROLE_INTERVIEWER = "interviewer"
+ROLE_INTERVIEWEE = "interviewee"
+ROLE_UNKNOWN = "unknown"
+
+# LLM 会自由发挥（「提问方」「投资方」「调研方」…），统一收敛到两个枚举。
+# 认不出来就返回空串而不是猜——猜错的归属比留空更糟。
+_ROLE_ALIASES: dict[str, tuple[str, ...]] = {
+    ROLE_INTERVIEWER: (
+        "interviewer", "asker", "investor", "访谈", "提问", "投资方", "投资人",
+        "买方", "调研", "尽调", "调研方", "访谈方", "访谈者",
+    ),
+    ROLE_INTERVIEWEE: (
+        "interviewee", "answerer", "company", "项目方", "企业方", "公司方",
+        "被访", "受访", "回答方", "创始人", "管理层", "路演方",
+    ),
+}
+
+ROLE_LABELS = {ROLE_INTERVIEWER: "访谈方", ROLE_INTERVIEWEE: "项目方"}
+_EMPTY_ASKER = "（未指明）"
+
+
+def normalize_asker_role(raw) -> str:
+    """把 LLM 输出的角色描述归一化为枚举；认不出返回空串。"""
+    text = str(raw or "").strip().lower()
+    if not text or text in ("unknown", "none", "null", "无", "未知", "不确定"):
+        return ""
+    for role, aliases in _ROLE_ALIASES.items():
+        if any(alias in text for alias in aliases):
+            return role
+    return ""
+
+
+def asker_label(asker: str, role: str) -> str:
+    """渲染用的提问者标签：姓名 > 角色 > （未指明）。"""
+    name = (asker or "").strip()
+    if name:
+        return name
+    return ROLE_LABELS.get((role or "").strip(), _EMPTY_ASKER)
+
+
 class QAPair:
-    def __init__(self, question: str = "", answer: str = "", asker: str = "", timerange: str = ""):
+    def __init__(
+        self,
+        question: str = "",
+        answer: str = "",
+        asker: str = "",
+        timerange: str = "",
+        asker_role: str = "",
+    ):
         self.question = question
         self.answer = answer
         self.asker = asker
         self.timerange = timerange
+        self.asker_role = asker_role
 
 
 class SectionContent:
@@ -43,7 +111,7 @@ class StructuredMinutes:
 def detect_transcript_type(text: str) -> str:
     """启发式识别转录类型：问号密度（？/? 每千字）< 1.5 → 单向陈述型。
 
-    已用真实数据标定：洛基精微（访谈问答）3.02/千字 → qa；开元通信（路演陈述）0.92/千字 → narration。
+    已用真实数据标定：访谈问答样本 3.02/千字 → qa；路演陈述样本 0.92/千字 → narration。
     """
     text = text or ""
     total = max(len(text), 1)
@@ -62,6 +130,9 @@ _TYPE_INSTRUCTIONS = {
 
 BLOCK_EXTRACT_TEMPLATE = """你是一个专业的金融会议纪要整理专家。以下是会议转录的一部分，请把它改写成书面化的纪要内容，并按话题聚合。
 
+## 当前日期
+{current_date}
+
 ## 要求
 1. **把口语化表达改写为书面语**：删除口头语和语气词（嗯、啊、就是说、蛮、其实、基本上、的话等），把口语短句重组为规范、简练的书面句子
 2. **必须保留全部实质信息**：数字、百分比、金额、公司名、专有名词、事件、时间、因果逻辑一条都不能删减、概括或遗漏；改写后应比原文明显简短，但信息量不减
@@ -72,6 +143,7 @@ BLOCK_EXTRACT_TEMPLATE = """你是一个专业的金融会议纪要整理专家�
    - "qa"：明确的提问-回答互动（有问方有答方）
    - "mixed"：同一块内既有陈述又有问答，此时 text 只写陈述部分，问答部分不要写入（问答会单独提取）
 6. **全文必须使用简体中文**：标题与正文一律简体，禁止繁体字
+7. {relative_time_rule}
 
 ## 输出格式
 只输出有效的JSON数组（不要包含任何其他文字或markdown标记），按出现顺序：
@@ -85,6 +157,12 @@ BLOCK_EXTRACT_TEMPLATE = """你是一个专业的金融会议纪要整理专家�
 
 QA_PROMPT_TEMPLATE = """你是一个专业的Q&A提取专家。请根据以下会议转录文本，提取问答对。
 
+## 会议背景
+{background}
+
+## 当前日期
+{current_date}
+
 ## 术语纠错规则
 {glossary_rules}
 
@@ -96,7 +174,7 @@ QA_PROMPT_TEMPLATE = """你是一个专业的Q&A提取专家。请根据以下�
 2. JSON结构如下：
 {{
   "qa_pairs": [
-    {{"question": "问题内容", "answer": "回答内容", "asker": "提问者姓名", "timerange": ""}}
+    {{"question": "问题内容", "answer": "回答内容", "asker": "", "asker_role": "interviewer|interviewee|unknown", "timerange": ""}}
   ]
 }}
 
@@ -105,6 +183,16 @@ QA_PROMPT_TEMPLATE = """你是一个专业的Q&A提取专家。请根据以下�
    - qa_pairs 的 answer 用书面语改写，去除口语化表达，但保留全部数字、金额、公司名与事实；转录中的 ASR 错词按上述术语纠错规则纠正
    - 问题与回答一律使用简体中文，禁止繁体字
    - timerange：仅当转录文本中含有明确时间戳（如 09:32 或 09:32-09:35）时填写；否则必须返回空字符串 ""，禁止编造或填入非时间戳内容
+   - **asker / asker_role 的填写规则（重要）**：
+     * `asker` 只填**原文明确出现的姓名或机构名**。转录稿通常没有说话人标记，此时必须留空字符串 ""，
+       **绝对不要根据上下文推测或编造提问者姓名**
+     * `asker_role` 填提问方的角色，三选一：
+       - "interviewer"：访谈方/投资方/调研方提出问题（"你们公司……""能否介绍一下……"）
+       - "interviewee"：项目方/企业方反向提问（"你们基金……""政府能给到什么支持"）
+       - "unknown"：无法判断，或属于双方互相确认的追问
+     * 判断依据是**提问内容指向谁**：问对方公司情况的是访谈方，问对方机构政策/流程的是项目方
+   - **不要把单向陈述强行包装成问答对**：只有原文确实存在提问方与回答方时才提取；主讲人的单向陈述/介绍属于主题要点范畴，重复提取会造成同一段内容既出现在主题要点又出现在问答里
+   - {relative_time_rule}
 {type_instruction}
 
 请直接输出JSON："""
@@ -148,12 +236,72 @@ def merge_blocks(blocks: list[list[dict]]) -> list[SectionContent]:
     return merged
 
 
+# both 模式去重阈值：问答对内容被主题要点覆盖的 bigram 比例达到此值即判定重复。
+# 取偏高值（0.7）以保守为先——宁可漏剔，不可误删真实问答。
+_QA_DEDUP_THRESHOLD = 0.7
+_QA_DEDUP_MIN_CHARS = 20
+
+
+def _bigrams(text: str) -> set[str]:
+    t = re.sub(r"\s+", "", text or "")
+    if len(t) < 2:
+        return set()
+    return {t[i : i + 2] for i in range(len(t) - 1)}
+
+
+def _drop_qa_redundant_with_sections(qa_data: dict, sections: list,
+                                     threshold: float = _QA_DEDUP_THRESHOLD) -> dict:
+    """剔除与主题要点重复的问答对（both 模式专用）。
+
+    根因：both 模式下 sections 来自 rewrite 的 narration 判定、QA 来自另一次独立提取，
+    两次判断互不通信，同一段陈述可能被 rewrite 收进主题要点、又被 QA 提取器当成问答抽出。
+
+    做法：确定性（零 LLM）按字符 bigram 计算「问答对内容被主题要点覆盖的比例」，
+    超过阈值即判定该问答实为陈述，予以剔除——使每段内容只归属一处。
+    主题要点优先保留（rewrite 已明确判定其非问答互动）。
+    """
+    pairs = qa_data.get("qa_pairs") or []
+    if not pairs or not sections:
+        return qa_data
+
+    sec_bigrams: set[str] = set()
+    for s in sections:
+        sec_bigrams |= _bigrams(getattr(s, "content", "") or "")
+    if not sec_bigrams:
+        return qa_data
+
+    kept: list[dict] = []
+    dropped = 0
+    for q in pairs:
+        if not isinstance(q, dict):
+            continue
+        text = f"{q.get('question') or ''}{q.get('answer') or ''}"
+        if len(re.sub(r"\s+", "", text)) < _QA_DEDUP_MIN_CHARS:
+            kept.append(q)
+            continue
+        b = _bigrams(text)
+        if b and len(b & sec_bigrams) / len(b) >= threshold:
+            dropped += 1
+            continue
+        kept.append(q)
+
+    if dropped:
+        logger.info(
+            "both 模式去重：剔除与主题要点重复的问答对 %d 条（阈值 %.2f，剩余 %d 条）",
+            dropped, threshold, len(kept),
+        )
+    qa_data["qa_pairs"] = kept
+    return qa_data
+
+
 class StructuredGenerator:
     """分块保真：sections 来自 rewrite 的 topic 块（保序合并）；QA 单独一次调用提取。"""
 
     def __init__(self, llm_client, template: Template | None = None, on_retry=None,
                  block_chunk_size: int = 4000, qa_chunk_size: int = 8000,
-                 glossary: Glossary | None = None, on_progress=None):
+                 glossary: Glossary | None = None, on_progress=None,
+                 background: Background | None = None,
+                 dedup_qa_with_sections: bool = True):
         self._llm = llm_client
         self._template = template
         self._on_retry = on_retry
@@ -161,6 +309,10 @@ class StructuredGenerator:
         self._qa_chunk_size = qa_chunk_size
         self._glossary = glossary or Glossary()
         self._on_progress = on_progress  # on_progress(index, total, elapsed_sec)
+        self._background = background or Background()
+        # both 模式下 sections 与 QA 由两次独立 LLM 判断产出，同一段可能两边都要；
+        # 开启后按内容重叠度确定性剔除与主题要点重复的问答对（每段内容只归属一处）。
+        self._dedup_qa_with_sections = dedup_qa_with_sections
 
     def generate(self, transcript: str, section_blocks: list[list[dict]] | None = None,
                  transcript_type: str | None = None, qa_source: str | None = None,
@@ -182,7 +334,31 @@ class StructuredGenerator:
         t = transcript_type or detect_transcript_type(source)
         sections = self._build_sections(source, section_blocks, t) if build_sections else []
         qa_data = self._extract_qa(source, t) if extract_qa else {}
+        # both 模式：sections 与 QA 来自两次独立判断，同一段可能两边都收。
+        # 以 rewrite 的「是否为问答互动」判定为准，把误抽成问答的陈述内容剔除。
+        if sections and qa_data and self._dedup_qa_with_sections:
+            qa_data = _drop_qa_redundant_with_sections(qa_data, sections)
         return self._build_minutes(sections, qa_data)
+
+    def _format_background(self) -> str:
+        """把会议背景信息格式化为 prompt 文本；无背景时返回「（无）」。
+
+        背景此前只在 rewrite 阶段注入，而 qa 模式（默认）不跑 rewrite，
+        导致 `-b` 被静默加载却从未使用——这里补上 QA 提取路径的注入。
+        """
+        bg = self._background
+        parts = []
+        for key, val in [
+            ("公司", getattr(bg, "company", "")),
+            ("行业", getattr(bg, "industry", "")),
+            ("参与者", getattr(bg, "participants", "")),
+            ("会议目的", getattr(bg, "meeting_purpose", "")),
+        ]:
+            if val:
+                parts.append(f"{key}：{val}")
+        for item in getattr(bg, "known_consensus", None) or []:
+            parts.append(f"已知共识：{item}")
+        return "\n".join(parts) or "（无）"
 
     def _build_sections(self, transcript: str, section_blocks, t: str) -> list[SectionContent]:
         if section_blocks:
@@ -192,9 +368,14 @@ class StructuredGenerator:
     def _extract_blocks(self, transcript: str) -> list[list[dict]]:
         """无 rewrite 分片标注时（如 --skip-rewrite）：自行分块提取 topic 块（宽解析无重试）。"""
         chunks = chunk_text(transcript, max_chars=self._block_chunk_size)
+        current_date = format_current_date()
         results = []
         for chunk in chunks:
-            prompt = BLOCK_EXTRACT_TEMPLATE.format(chunk=chunk)
+            prompt = BLOCK_EXTRACT_TEMPLATE.format(
+                chunk=chunk,
+                current_date=current_date,
+                relative_time_rule=RELATIVE_TIME_RULE,
+            )
             raw = self._llm.generate(prompt, retry_callback=self._on_retry)
             _text, blocks = parse_blocks(raw)
             results.append(blocks)
@@ -217,6 +398,9 @@ class StructuredGenerator:
             transcript=transcript,
             type_instruction=_TYPE_INSTRUCTIONS.get(t, ""),
             glossary_rules=format_glossary_rules(self._glossary),
+            background=self._format_background(),
+            current_date=format_current_date(),
+            relative_time_rule=RELATIVE_TIME_RULE,
         )
         raw = self._llm.generate(prompt, retry_callback=self._on_retry)
         data = self._parse_with_retry(prompt, raw)
@@ -337,6 +521,8 @@ class StructuredGenerator:
                         answer=q.get("answer", ""),
                         asker=q.get("asker", ""),
                         timerange=q.get("timerange", ""),
+                        # LLM 可能写「提问方」「投资方」等自由文本，这里收敛成枚举
+                        asker_role=normalize_asker_role(q.get("asker_role")),
                     )
                 )
 

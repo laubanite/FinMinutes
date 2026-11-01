@@ -1,5 +1,5 @@
 from finminutes.core.fact_checker import FactCheckReport
-from finminutes.core.summarizer import StructuredMinutes
+from finminutes.core.summarizer import StructuredMinutes, asker_label
 
 
 class MarkdownRenderer:
@@ -35,7 +35,8 @@ class MarkdownRenderer:
     def _render_qa_section(self) -> str:
         lines = ["---", "", "## Q&A 环节", ""]
         for qa in self._minutes.qa_pairs:
-            asker = qa.asker or "（未指明）"
+            # 姓名 > 角色 > （未指明）：纯文本转录稿没有说话人，只能退到角色
+            asker = asker_label(qa.asker, getattr(qa, "asker_role", ""))
             lines.append(f"- **{asker}**：{qa.question}")
             if qa.answer:
                 lines.append(f"  - {qa.answer}")

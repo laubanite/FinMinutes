@@ -10,6 +10,7 @@ from finminutes.core.summarizer import (
     SectionContent,
     StructuredGenerator,
     StructuredMinutes,
+    _drop_qa_redundant_with_sections,
     _topics_similar,
     merge_blocks,
 )
@@ -182,9 +183,15 @@ class TestStructuredGenerator:
         assert counter["n"] >= 2
         assert len(result.qa_pairs) == counter["n"]
         assert result.qa_pairs[0].question == "Q1？"
-        # 每次调用只带子块，不携带整篇长文本
+        # 每次调用只带子块，不携带整篇长文本。
+        # 不能拿整条 prompt 的长度去比：prompt 里的规则和模板本身就一千多字，
+        # 模板一改这条断言就假阳性（asker_role 那次就撞上了）。直接数句子。
+        sentence = "我们讨论了毛利率和营收情况？"
+        per_chunk = 200 // len(sentence) + 2
         for call in llm.generate.call_args_list:
-            assert len(call.args[0]) < len(long_text)
+            prompt = call.args[0]
+            assert long_text not in prompt
+            assert prompt.count(sentence) <= per_chunk
 
     def test_qa_chunked_dedupes_overlap(self, template):
         """重叠区重复提取的同一问题只保留一次（按问题文本判重）。"""
@@ -249,6 +256,45 @@ class TestStructuredGenerator:
         result = gen.generate("长文本？" * 130, section_blocks=SECTIONS_BLOCKS)
         assert [q.question for q in result.qa_pairs] == ["Q1？"]
         assert result.qa_pairs[0].answer == ""
+
+
+class TestQaSectionDedup:
+    """both 模式去重回归测试：同一段内容不能既进主题要点又进 Q&A。"""
+
+    def test_drops_qa_redundant_with_sections(self):
+        """问答内容与主题要点高度重合 → 判定为误抽的陈述，剔除。"""
+        sections = [SectionContent(
+            title="技术路线",
+            content="公司采用薄膜晶体管路线做电子皮肤数字化处理并行计算已完成验证",
+        )]
+        qa_data = {"qa_pairs": [
+            {"question": "技术路线是什么",
+             "answer": "公司采用薄膜晶体管路线做电子皮肤数字化处理并行计算已完成验证"},
+            {"question": "第一轮融资什么时候开始",
+             "answer": "今年一月开始联系投资人，五月份完成公司注册，估值两亿"},
+        ]}
+        out = _drop_qa_redundant_with_sections(qa_data, sections)
+        assert [q["question"] for q in out["qa_pairs"]] == ["第一轮融资什么时候开始"]
+
+    def test_keeps_all_when_no_overlap(self):
+        """内容不重合时一条都不能删（保守优先，宁可漏剔不可误删）。"""
+        sections = [SectionContent(title="行业格局", content="电容式与电阻式方案并存，头部厂商仍在选型")]
+        qa_data = {"qa_pairs": [
+            {"question": "团队规模多大", "answer": "目前研发团队三十人左右，核心成员来自清华课题组"},
+        ]}
+        out = _drop_qa_redundant_with_sections(qa_data, sections)
+        assert len(out["qa_pairs"]) == 1
+
+    def test_short_qa_exempt(self):
+        """过短的问答不参与去重，避免误删。"""
+        sections = [SectionContent(title="T", content="甲乙丙丁戊己庚辛壬癸" * 5)]
+        qa_data = {"qa_pairs": [{"question": "进度", "answer": "按期"}]}
+        assert len(_drop_qa_redundant_with_sections(qa_data, sections)["qa_pairs"]) == 1
+
+    def test_no_sections_is_noop(self):
+        """qa / speech 模式不产 sections → 去重是空操作。"""
+        qa_data = {"qa_pairs": [{"question": "Q", "answer": "A"}]}
+        assert _drop_qa_redundant_with_sections(qa_data, []) is qa_data
 
 
 class TestParseResponse:

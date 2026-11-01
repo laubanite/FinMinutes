@@ -163,7 +163,7 @@ def _parse_standard_format(text: str) -> list[dict]:
         question = m.group("question").strip()
         answer = m.group("answer").strip()
         if question or answer:
-            pairs.append({"question": question, "answer": answer, "asker": ""})
+            pairs.append({"question": question, "answer": answer, "asker": "", "asker_role": ""})
     return pairs
 
 
@@ -190,9 +190,9 @@ def _parse_simple_format(text: str) -> list[dict]:
                 else:
                     i += 1
             if answer:
-                pairs.append({"question": question, "answer": answer, "asker": ""})
+                pairs.append({"question": question, "answer": answer, "asker": "", "asker_role": ""})
             else:
-                pairs.append({"question": question, "answer": "", "asker": ""})
+                pairs.append({"question": question, "answer": "", "asker": "", "asker_role": ""})
                 continue
         else:
             i += 1
@@ -205,7 +205,7 @@ def _parse_chinese_format(text: str) -> list[dict]:
         question = m.group("question").strip()
         answer = m.group("answer").strip()
         if question or answer:
-            pairs.append({"question": question, "answer": answer, "asker": ""})
+            pairs.append({"question": question, "answer": answer, "asker": "", "asker_role": ""})
     return pairs
 
 
@@ -225,5 +225,5 @@ def _parse_heuristic(text: str) -> list[dict]:
         if re.match(r"^([A-Za-z\u4e00-\u9fff])\1+$", label):
             continue
         answer = "\n".join(lines[1:]).strip() if len(lines) > 1 else ""
-        pairs.append({"question": question, "answer": answer, "asker": ""})
+        pairs.append({"question": question, "answer": answer, "asker": "", "asker_role": ""})
     return pairs

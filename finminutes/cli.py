@@ -7,7 +7,7 @@ from finminutes import __version__
 from finminutes.core.asr_client import FFmpegMissingError
 from finminutes.core.config_manager import ConfigManager
 from finminutes.core.exceptions import FinMinutesError
-from finminutes.core.glossary_loader import GlossaryLoader
+from finminutes.core.glossary_loader import GlossaryLoader, dump_glossary
 from finminutes.core.llm_client import LLMFactory
 from finminutes.core.pipeline import Pipeline
 from finminutes.core.review_renderer import ReviewRenderer
@@ -18,6 +18,7 @@ from finminutes.core.template_loader import TemplateLoader
 from finminutes.core.background_loader import BackgroundLoader
 from finminutes.core.rewriter import format_glossary_rules
 from finminutes.core.fact_checker import FactChecker
+from finminutes.core.term_corrector import format_report as format_term_report
 
 _CONFIG_PATH = os.path.expanduser("~/.finminutes/config.yaml")
 
@@ -86,11 +87,21 @@ def _maybe_show_background_hint(background: str):
         click.echo(_BACKGROUND_HINT)
 
 
-def _estimate_llm_calls(text: str, chunk_size: int = 4000) -> int:
-    """估算本次 LLM 调用次数：改写分片数 + 摘要 1 次。"""
+def _estimate_rewrite_calls(text: str, chunk_size: int = 4000) -> int:
+    """改写阶段的调用数：就是分片数。
+
+    主题块由改写阶段顺带产出（`section_blocks`），结构化时不再额外调用，
+    所以这里没有「+1」。旧版写了 `+1 摘要`，但 `StructuredGenerator` 拿到
+    section_blocks 后是纯合并，不发请求——那个 +1 是凭空的。
+    """
     from finminutes.core.rewriter import chunk_text
-    chunks = chunk_text(text or "", max_chars=chunk_size)
-    return max(len(chunks), 1) + 1
+
+    return max(len(chunk_text(text or "", max_chars=chunk_size)), 1)
+
+
+def _estimate_llm_calls(text: str, chunk_size: int = 4000) -> int:
+    """兼容旧调用名。"""
+    return _estimate_rewrite_calls(text, chunk_size=chunk_size)
 
 
 def _estimate_qa_calls(text: str, chunk_size: int = 8000) -> int:
@@ -98,6 +109,53 @@ def _estimate_qa_calls(text: str, chunk_size: int = 8000) -> int:
     from finminutes.core.rewriter import chunk_text
     chunks = chunk_text(text or "", max_chars=chunk_size, overlap=400)
     return max(len(chunks), 1)
+
+
+def _estimate_calls(text: str, fmt: str = "qa", skip_rewrite: bool = False,
+                    qa_chunk_size: int = 8000, rewrite_chunk_size: int = 4000) -> int:
+    """估算一次处理总共要发多少次 LLM 请求。
+
+    三种模式的调用结构不一样，不能一律按「改写分片数」算：
+    - `qa`：只跑 QA 分块提取
+    - `speech`：只跑改写分片（主题块顺带产出）
+    - `both`：改写分片 **加上** QA 分块——两段都跑，这里最容易漏掉 QA 那段
+
+    旧版对 both 只算了改写，导致 1 小时访谈报 6 次、实际 8 次，
+    配额预警（`est > 20`）也会因此偏晚触发。
+    """
+    if fmt == "qa":
+        return _estimate_qa_calls(text, chunk_size=qa_chunk_size)
+    # --skip-rewrite 时没有改写分片，主题块退回自行分块提取（block_chunk_size 默认同改写分片）
+    base = _estimate_rewrite_calls(text, chunk_size=rewrite_chunk_size)
+    if fmt == "both":
+        return base + _estimate_qa_calls(text, chunk_size=qa_chunk_size)
+    return base
+
+
+def _load_hotwords(glossary_tag: str) -> list[str]:
+    """从术语表提取正确词形，供 ASR 解码阶段做热词偏置。
+
+    注意这里只取 term（正确写法），不取 corrections——偏置的目标是让解码器
+    直接产出正确词，把错字挡在源头，而不是事后替换。
+    无术语表或加载失败时静默返回空列表，不影响转写主流程。
+    """
+    if not glossary_tag:
+        return []
+    try:
+        glossary = GlossaryLoader().load(glossary_tag)
+    except Exception:
+        return []
+    return [t.term for t in glossary.terms if t.term]
+
+
+def _term_report(result) -> str:
+    """把流水线的术语纠错结果渲染成校验稿片段，并在终端打一行摘要。"""
+    applied = list(getattr(result, "term_corrections", None) or [])
+    suspects = list(getattr(result, "term_suspects", None) or [])
+    if not applied and not suspects:
+        return ""
+    click.echo(f"[术语] 自动纠正 {len(applied)} 处，疑似音近错词 {len(suspects)} 处（明细见校验稿）")
+    return format_term_report(applied + suspects)
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +166,7 @@ def _estimate_qa_calls(text: str, chunk_size: int = 8000) -> int:
 class _MainGroup(click.Group):
     """自定义 group：按工作流逻辑排序 --help 子命令显示顺序。"""
 
-    _CMD_ORDER = ("config", "init", "glossary", "transcribe", "process", "render")
+    _CMD_ORDER = ("config", "init", "glossary", "transcribe", "diarize", "process", "render")
     _HIDDEN = {"serve"}
 
     def list_commands(self, ctx):
@@ -474,14 +532,17 @@ def process(transcript, background, glossary, mode, output, skip_rewrite, fmt):
         sys.exit(1)
 
     if mode == "full":
-        if fmt == "qa":
-            est = _estimate_qa_calls(text, chunk_size=cfg.get_qa_chunk_size())
-            if est > 20:
-                click.echo(f"[提示]预计本次 LLM 调用约 {est} 次（QA 分块提取）。OpenRouter 免费档日配额 50 次。", err=True)
-        elif not skip_rewrite:
-            est = _estimate_llm_calls(text, chunk_size=cfg.get_rewrite_chunk_size())
-            if est > 20:
-                click.echo(f"[提示]预计本次 LLM 调用约 {est} 次（改写分片 + 摘要）。OpenRouter 免费档日配额 50 次，长文本可加 --skip-rewrite 减半。", err=True)
+        est = _estimate_calls(
+            text, fmt=fmt, skip_rewrite=skip_rewrite,
+            qa_chunk_size=cfg.get_qa_chunk_size(),
+            rewrite_chunk_size=cfg.get_rewrite_chunk_size(),
+        )
+        if est > 20:
+            detail = "QA 分块提取" if fmt == "qa" else ("改写分片 + QA 提取" if fmt == "both" else "改写分片")
+            click.echo(
+                f"[提示]预计本次 LLM 调用约 {est} 次（{detail}）。OpenRouter 免费档日配额 50 次。",
+                err=True,
+            )
 
     _maybe_show_background_hint(background)
 
@@ -591,7 +652,9 @@ def process(transcript, background, glossary, mode, output, skip_rewrite, fmt):
                 err=True,
             )
 
-    review_content = ReviewRenderer(minutes, report, result.transcript_raw).render()
+    review_content = ReviewRenderer(
+        minutes, report, result.transcript_raw, term_report=_term_report(result)
+    ).render()
 
     review_path = _resolve_output_path(transcript, output, "_校验稿.md")
     os.makedirs(os.path.dirname(review_path) or ".", exist_ok=True)
@@ -645,7 +708,13 @@ def render(review, json_path, template, output):
             sys.exit(1)
         # FormalGenerator 的 QA 输入是 dict（内部 .get），sections 是 SectionContent 对象
         qa_pairs = [
-            {"question": q.question, "answer": q.answer, "asker": q.asker, "timerange": q.timerange}
+            {
+                "question": q.question,
+                "answer": q.answer,
+                "asker": q.asker,
+                "asker_role": getattr(q, "asker_role", ""),
+                "timerange": q.timerange,
+            }
             for q in minutes.qa_pairs
         ]
         sections = minutes.sections
@@ -774,15 +843,16 @@ def _build_export_prompt(transcript: str, background_text: str, glossary_text: s
         "【输出格式要求（严格遵守，只输出 JSON，不要任何其他文字或 markdown 标记）】",
     ]
     if fmt == "qa":
-        parts.append('{"qa_pairs": [{"question": "问题", "answer": "书面化回答（保留全部数字、金额、公司名与事实）", "asker": "提问者", "timerange": ""}]}')
+        parts.append('{"qa_pairs": [{"question": "问题", "answer": "书面化回答（保留全部数字、金额、公司名与事实）", "asker": "", "asker_role": "interviewer|interviewee|unknown", "timerange": ""}]}')
         parts.append("- 按时间顺序提取每一个提问及其回答（含重复、跟进提问），数量与转录中的提问数基本一致")
         parts.append("- answer 用书面语改写，去除口语化（嗯/啊/就是说/蛮/其实等），但数字事实一条不能丢")
+        parts.append("- asker 只填原文明确出现的姓名，没有说话人标记就留空，禁止推测；asker_role 填 interviewer（访谈方提问）/ interviewee（项目方提问）/ unknown")
     elif fmt == "speech":
         parts.append('{"sections": [{"title": "话题标题", "content": "该话题的书面化内容（保留全部数字与事实）"}]}')
         parts.append("- 按出现顺序把内容聚合为 2-4 个较大的话题块，不要切得过细")
         parts.append("- 书面化改写，信息零丢失")
     else:  # both
-        parts.append('{"sections": [{"title": "话题标题", "content": "独白部分的书面化内容（保留全部数字与事实）"}], "qa_pairs": [{"question": "问题", "answer": "书面化回答", "asker": "提问者", "timerange": ""}]}')
+        parts.append('{"sections": [{"title": "话题标题", "content": "独白部分的书面化内容（保留全部数字与事实）"}], "qa_pairs": [{"question": "问题", "answer": "书面化回答", "asker": "", "asker_role": "interviewer|interviewee|unknown", "timerange": ""}]}')
         parts.append("- sections 只针对大段单向陈述/介绍（独白）部分；问答互动放入 qa_pairs")
         parts.append("- 独白部分书面化改写保留全部数字事实；问答按时间顺序提取，answer 书面化且保留全部数字事实")
     parts += ["", "【背景信息】", background_text, "", "【术语纠错规则】", glossary_text, "", "【转录全文】", transcript]
@@ -867,7 +937,8 @@ def _build_minutes_from_result(data: dict):
     ]
     qa_pairs = [
         QAPair(question=q.get("question", ""), answer=q.get("answer", ""),
-               asker=q.get("asker", ""), timerange=q.get("timerange", ""))
+               asker=q.get("asker", ""), timerange=q.get("timerange", ""),
+               asker_role=q.get("asker_role", ""))
         for q in data.get("qa_pairs", []) if isinstance(q, dict)
     ]
     return StructuredMinutes(sections=sections, qa_pairs=qa_pairs)
@@ -889,7 +960,13 @@ def _minutes_to_dict(minutes) -> dict:
             for s in minutes.sections
         ],
         "qa_pairs": [
-            {"question": q.question, "answer": q.answer, "asker": q.asker, "timerange": q.timerange}
+            {
+                "question": q.question,
+                "answer": q.answer,
+                "asker": q.asker,
+                "asker_role": getattr(q, "asker_role", ""),
+                "timerange": q.timerange,
+            }
             for q in minutes.qa_pairs
         ],
     }
@@ -902,11 +979,11 @@ def _build_debug_prompt(minutes, uncovered_snippets: list[str]) -> str:
     has_sections = bool(minutes.sections)
     has_qa = bool(minutes.qa_pairs)
     if has_sections and has_qa:
-        schema = '{"sections": [{"title": "...", "content": "书面化内容（保留全部数字与事实）"}], "qa_pairs": [{"question": "...", "answer": "书面化回答（保留全部数字、金额、公司名与事实）", "asker": "提问者", "timerange": ""}]}'
+        schema = '{"sections": [{"title": "...", "content": "书面化内容（保留全部数字与事实）"}], "qa_pairs": [{"question": "...", "answer": "书面化回答（保留全部数字、金额、公司名与事实）", "asker": "", "asker_role": "interviewer|interviewee|unknown", "timerange": ""}]}'
     elif has_sections:
         schema = '{"sections": [{"title": "...", "content": "书面化内容（保留全部数字与事实）"}]}'
     else:
-        schema = '{"qa_pairs": [{"question": "...", "answer": "书面化回答（保留全部数字、金额、公司名与事实）", "asker": "提问者", "timerange": ""}]}'
+        schema = '{"qa_pairs": [{"question": "...", "answer": "书面化回答（保留全部数字、金额、公司名与事实）", "asker": "", "asker_role": "interviewer|interviewee|unknown", "timerange": ""}]}'
 
     current = json.dumps(_minutes_to_dict(minutes), ensure_ascii=False, indent=1)
     parts = [
@@ -1452,6 +1529,51 @@ def _maybe_extract_audio(audio: str, output: str) -> str:
     return target
 
 
+# ---------------------------------------------------------------------------
+# transcribe  —  带说话人的转写
+# ---------------------------------------------------------------------------
+
+
+def _transcribe_with_speakers(client, audio, speakers, progress_callback, hotwords) -> str:
+    """转写 + 说话人分离，输出带 `说话人N:` 标签的转录稿。
+
+    任何一环不可用都退回纯文本，而不是让整次转写白跑——用户要的首先是转录稿，
+    标签是加分项。但每一步失败都要说清楚原因，别让人以为标签已经生效。
+    """
+    from finminutes.core import diarization as dz
+    from finminutes.core.asr_client import TimestampUnsupportedError
+
+    if not dz.available() or not dz.models_ready():
+        click.echo("[警告] 说话人分离不可用（缺依赖或模型），本次退回纯文本转写。", err=True)
+        click.echo(
+            "       安装：pip install finminutes[diarization] && "
+            "python docs/tools/download_diarization_models.py",
+            err=True,
+        )
+        return client.transcribe(audio, progress_callback=progress_callback, hotwords=hotwords)
+
+    click.echo("正在获取带时间戳的分段...")
+    try:
+        segments = client.transcribe_segments(
+            audio, progress_callback=progress_callback, hotwords=hotwords
+        )
+    except TimestampUnsupportedError as e:
+        click.echo(f"[警告] {e}", err=True)
+        click.echo("       本次退回纯文本转写，转录稿不带说话人标签。", err=True)
+        return client.transcribe(audio, progress_callback=progress_callback, hotwords=hotwords)
+
+    click.echo(f"  拿到 {len(segments)} 个分段，开始说话人分离...")
+    turns = dz.coalesce(dz.merge_short_turns(dz.diarize(audio, num_speakers=speakers)))
+    share = dz.dominant_share(turns)
+    click.echo(f"  分离出 {dz.speaker_count(turns)} 个说话人，单方最大占比 {share * 100:.0f}%")
+    if share > dz.DOMINANCE_WARN:
+        click.echo(
+            "  [警告] 这段音频基本是单人在讲，标签无法区分问方/答方，下游别据此判断角色。",
+            err=True,
+        )
+    return dz.to_labeled_transcript(segments, turns)
+
+
 @main.command()
 @click.option("--audio", "-a", required=True, help="音频/视频文件路径（.mp3/.wav/.m4a；视频自动提取音轨）")
 @click.option("--background", "-b", default="", help="背景信息 YAML 文件路径")
@@ -1460,12 +1582,16 @@ def _maybe_extract_audio(audio: str, output: str) -> str:
 @click.option("--output", "-o", default="", help="输出前缀或目录路径（默认: 音频所在目录）")
 @click.option("--skip-rewrite", is_flag=True, help="跳过改写润色阶段（减少 LLM 调用，适合长文本/限流场景）")
 @click.option(
+    "--speakers", "-s", default=0,
+    help="同时做说话人分离并给转录稿加标签，指定人数（访谈一般 2，带 FA 的三方传 3）；0 表示不做",
+)
+@click.option(
     "--format", "-f", "fmt",
     default="qa",
     type=click.Choice(["qa", "speech", "both"], case_sensitive=False),
     help="转录类型：qa 纯对话（默认）/ speech 纯独白 / both 独白+对话",
 )
-def transcribe(audio, background, glossary, no_process, output, skip_rewrite, fmt):
+def transcribe(audio, background, glossary, no_process, output, skip_rewrite, speakers, fmt):
     """语音转写，语音直接生成校验稿（可选）"""
     audio = _normalize_path(audio, "-a ")
     background = _normalize_path(background, "-b ")
@@ -1510,7 +1636,20 @@ def transcribe(audio, background, glossary, no_process, output, skip_rewrite, fm
 
     try:
         client = cfg.get_asr_client()
-        transcript = client.transcribe(effective_audio, progress_callback=_on_chunk_progress if needs_chunking else None)
+        hotwords = _load_hotwords(glossary)
+        if hotwords:
+            click.echo(f"  已加载 {len(hotwords)} 个术语作为 ASR 热词（解码偏置）")
+        if speakers > 0:
+            transcript = _transcribe_with_speakers(
+                client, effective_audio, speakers,
+                _on_chunk_progress if needs_chunking else None, hotwords or None,
+            )
+        else:
+            transcript = client.transcribe(
+                effective_audio,
+                progress_callback=_on_chunk_progress if needs_chunking else None,
+                hotwords=hotwords or None,
+            )
     except FFmpegMissingError:
         click.echo(_ffmpeg_install_guide(), err=True)
         sys.exit(1)
@@ -1531,10 +1670,11 @@ def transcribe(audio, background, glossary, no_process, output, skip_rewrite, fm
     click.echo(f"转录稿已保存至: {transcript_path}")
 
     if not no_process:
-        if fmt == "qa":
-            est = _estimate_qa_calls(transcript, chunk_size=cfg.get_qa_chunk_size())
-        else:
-            est = _estimate_llm_calls(transcript, chunk_size=cfg.get_rewrite_chunk_size()) if not skip_rewrite else 1
+        est = _estimate_calls(
+            transcript, fmt=fmt, skip_rewrite=skip_rewrite,
+            qa_chunk_size=cfg.get_qa_chunk_size(),
+            rewrite_chunk_size=cfg.get_rewrite_chunk_size(),
+        )
         if est > 20:
             click.echo(f"[提示]预计本次 LLM 调用约 {est} 次。OpenRouter 免费档日配额 50 次。", err=True)
         click.echo("")
@@ -1602,11 +1742,68 @@ def transcribe(audio, background, glossary, no_process, output, skip_rewrite, fm
             from finminutes.core.summarizer import StructuredMinutes
             minutes = StructuredMinutes()
 
-        review_content = ReviewRenderer(minutes, result.fact_check_report, result.transcript_raw).render()
+        review_content = ReviewRenderer(
+            minutes, result.fact_check_report, result.transcript_raw, term_report=_term_report(result)
+        ).render()
         review_path = _resolve_output_path(audio, output, "_校验稿.md")
         with open(review_path, "w", encoding="utf-8") as f:
             f.write(review_content)
         click.echo(f"校验稿已输出至: {review_path}")
+
+
+# ---------------------------------------------------------------------------
+# diarize  —  local speaker diarization (no API calls)
+# ---------------------------------------------------------------------------
+
+
+@main.command()
+@click.option("--audio", "-a", required=True, help="音频/视频文件路径")
+@click.option(
+    "--speakers", "-s", default=2, show_default=True,
+    help="说话人数量；访谈/调研一般 2，带 FA 的三方传 3。传 0 表示自动推断（实测会过度聚类，慎用）",
+)
+@click.option("--min-turn", default=1.0, show_default=True, help="短于该秒数的碎片并入相邻发言")
+@click.option("--output", "-o", default="", help="输出 turn 列表文件路径（默认: 音频所在目录）")
+def diarize(audio, speakers, min_turn, output):
+    """本地说话人分离（离线，不消耗任何 API 额度）"""
+    from finminutes.core import diarization as dz
+
+    audio = _normalize_path(audio, "-a ")
+    output = _normalize_path(output, "-o ")
+    if not os.path.exists(audio):
+        click.echo(f"错误：音频文件不存在: {audio}", err=True)
+        sys.exit(1)
+
+    if not dz.available():
+        click.echo("错误：缺少依赖。安装：pip install finminutes[diarization]", err=True)
+        sys.exit(1)
+    if not dz.models_ready():
+        click.echo(f"错误：模型未就位（{dz.model_dir()}）", err=True)
+        click.echo("提示：先运行 python docs/tools/download_diarization_models.py", err=True)
+        sys.exit(1)
+
+    click.echo(f"正在做说话人分离（{speakers if speakers > 0 else '自动推断'} 人）...")
+    try:
+        turns = dz.diarize(audio, num_speakers=speakers if speakers > 0 else -1)
+    except Exception as e:
+        click.echo(f"分离失败: {e}", err=True)
+        sys.exit(1)
+
+    turns = dz.merge_short_turns(turns, min_duration=min_turn)
+    turns = dz.coalesce(turns)
+    total = sum(t.duration for t in turns)
+    share = dz.dominant_share(turns)
+    click.echo(f"完成：{len(turns)} 段发言，{dz.speaker_count(turns)} 个说话人，"
+               f"单方最大占比 {share * 100:.0f}%")
+    if share > dz.DOMINANCE_WARN:
+        click.echo("  注意：这段音频基本是单人在讲，说话人标签无法区分问方/答方。", err=True)
+
+    out_path = output or _resolve_output_path(audio, "", "_说话人.txt")
+    with open(out_path, "w", encoding="utf-8") as f:
+        for t in turns:
+            f.write(f"[{t.start:8.2f} - {t.end:8.2f}] spk{t.speaker}  {t.duration:6.1f}s\n")
+    click.echo(f"结果已输出至: {out_path}")
+    click.echo("提示：spk 编号每次运行可能不同，只代表「是不是同一个人」，不代表姓名。")
 
 
 # ---------------------------------------------------------------------------
@@ -1624,7 +1821,8 @@ def glossary():
 @click.option("--from", "-f", "from_file", required=True, help="源文件路径（.txt/.docx/.pdf/.md）")
 @click.option("--tag", "-t", required=True, help="术语表标签名")
 @click.option("--output", "-o", default="", help="输出 YAML 路径（默认当前目录 <tag>.yaml）")
-def glossary_generate(from_file, tag, output):
+@click.option("--expand", "do_expand", is_flag=True, help="生成后立即按同音字扩展混淆集（需 pypinyin）")
+def glossary_generate(from_file, tag, output, do_expand):
     """从访谈清单/材料中自动提取术语并生成术语表"""
     from_file = _normalize_path(from_file, "-f ")
     output = _normalize_path(output, "-o ")
@@ -1651,11 +1849,80 @@ def glossary_generate(from_file, tag, output):
     terms = data.get("terms", [])
     click.echo(f"提取到 {len(terms)} 个术语。")
 
+    if do_expand:
+        data = _expand_glossary_data(data)
+
     if not output:
         output = f"{tag}.yaml"
 
     save_glossary(data, output)
     click.echo(f"术语表已保存至: {output}")
+
+
+@glossary.command(name="expand")
+@click.option("--glossary", "-g", "glossary_path", required=True, help="术语表 YAML 文件路径")
+@click.option("--output", "-o", default="", help="输出路径（默认原地覆盖）")
+@click.option("--max-variants", default=120, show_default=True, help="每个术语最多生成多少候选错写")
+@click.option("--max-positions", default=1, show_default=True, help="最多同时替换几个字（2 会组合爆炸，慎用）")
+@click.option("--min-len", default=2, show_default=True, help="只扩展不少于该长度的术语（2 字术语误报率高，可设 3）")
+def glossary_expand(glossary_path, output, max_variants, max_positions, min_len):
+    """按同音字扩展混淆集，生成 auto_variants（仅用于告警，不自动替换正文）"""
+    from finminutes.core.confusion import expand_glossary, homophone_map
+
+    glossary_path = _normalize_path(glossary_path, "-g ")
+    output = _normalize_path(output, "-o ") or glossary_path
+    if not os.path.exists(glossary_path):
+        click.echo(f"错误：术语表不存在: {glossary_path}", err=True)
+        sys.exit(1)
+
+    if not homophone_map():
+        click.echo("错误：混淆集扩展需要 pypinyin。请执行: pip install pypinyin", err=True)
+        click.echo("      （或 pip install finminutes[phonetic]）", err=True)
+        sys.exit(1)
+
+    try:
+        glossary = GlossaryLoader().load(glossary_path)
+    except Exception as e:
+        click.echo(f"术语表加载失败: {e}", err=True)
+        sys.exit(1)
+
+    click.echo(f"正在扩展 {len(glossary.terms)} 个术语（每个最多 {max_variants} 个候选）...")
+    stats = expand_glossary(
+        glossary, max_variants=max_variants, max_positions=max_positions, min_term_len=min_len
+    )
+
+    save_glossary(dump_glossary(glossary), output)
+    total = sum(stats.values())
+    click.echo(f"已生成 {total} 个候选错写，写入: {output}")
+    click.echo("")
+    click.echo("提示：auto_variants 只用于校验稿告警，不会自动替换正文。", err=True)
+    click.echo("      核对后确认确实会错的写法，把它挪进 corrections 才会进入确定性替换。", err=True)
+
+
+def _expand_glossary_data(data: dict) -> dict:
+    """对 glossary generate 产出的原始 dict 做混淆集扩展，返回新的 dict。"""
+    from finminutes.core.confusion import expand_glossary, homophone_map
+    from finminutes.core.models import Glossary, Term
+
+    if not homophone_map():
+        click.echo("[提示]未安装 pypinyin，跳过混淆集扩展（pip install finminutes[phonetic]）", err=True)
+        return data
+
+    glossary = Glossary(
+        industry=data.get("industry", ""),
+        terms=[
+            Term(
+                term=item.get("term", ""),
+                context=item.get("context", ""),
+                corrections=item.get("corrections", []) or [],
+            )
+            for item in data.get("terms", [])
+            if isinstance(item, dict) and item.get("term")
+        ],
+    )
+    stats = expand_glossary(glossary)
+    click.echo(f"混淆集扩展完成，共生成 {sum(stats.values())} 个候选错写。")
+    return dump_glossary(glossary)
 
 
 # ---------------------------------------------------------------------------

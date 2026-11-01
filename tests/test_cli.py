@@ -738,3 +738,373 @@ sections:
         assert "新话题" in text
         assert "新内容（用户编辑后）" in text
 
+
+
+class TestDiarizeCommand:
+    """`finminutes diarize` —— 只验证参数接线与输出格式，不跑真推理（太慢）。"""
+
+    def _fake_turns(self):
+        from finminutes.core.diarization import Turn
+
+        return [Turn(0.0, 60.0, 0), Turn(60.0, 61.0, 1), Turn(61.0, 120.0, 1)]
+
+    def test_writes_turn_list(self, monkeypatch, tmp_path):
+        from finminutes.core import diarization as dz
+
+        audio = tmp_path / "a.wav"
+        audio.write_bytes(b"x")
+        monkeypatch.setattr(dz, "available", lambda: True)
+        monkeypatch.setattr(dz, "models_ready", lambda: True)
+        monkeypatch.setattr(dz, "diarize", lambda *a, **k: self._fake_turns())
+
+        out = tmp_path / "turns.txt"
+        result = CliRunner().invoke(main, ["diarize", "-a", str(audio), "-o", str(out)])
+        assert result.exit_code == 0, result.output
+        # 中间那个 1 秒的 spk1 和后面 61-120s 的 spk1 相邻且同人，会被 coalesce 合成一段
+        assert "2 段发言" in result.output
+        lines = out.read_text(encoding="utf-8").strip().splitlines()
+        assert len(lines) == 2
+        assert "spk0" in lines[0] and "spk1" in lines[1]
+
+    def test_speakers_zero_means_auto(self, monkeypatch, tmp_path):
+        from finminutes.core import diarization as dz
+
+        audio = tmp_path / "a.wav"
+        audio.write_bytes(b"x")
+        seen = {}
+        monkeypatch.setattr(dz, "available", lambda: True)
+        monkeypatch.setattr(dz, "models_ready", lambda: True)
+
+        def fake_diarize(path, num_speakers=2, **k):
+            seen["num"] = num_speakers
+            return self._fake_turns()
+
+        monkeypatch.setattr(dz, "diarize", fake_diarize)
+        result = CliRunner().invoke(
+            main, ["diarize", "-a", str(audio), "-s", "0", "-o", str(tmp_path / "t.txt")]
+        )
+        assert result.exit_code == 0, result.output
+        assert seen["num"] == -1
+
+    def test_warns_on_monologue(self, monkeypatch, tmp_path):
+        from finminutes.core import diarization as dz
+
+        audio = tmp_path / "a.wav"
+        audio.write_bytes(b"x")
+        monkeypatch.setattr(dz, "available", lambda: True)
+        monkeypatch.setattr(dz, "models_ready", lambda: True)
+        monkeypatch.setattr(
+            dz, "diarize", lambda *a, **k: [dz.Turn(0, 289, 0), dz.Turn(289, 301, 1)]
+        )
+        result = CliRunner().invoke(
+            main, ["diarize", "-a", str(audio), "-o", str(tmp_path / "t.txt")]
+        )
+        assert result.exit_code == 0, result.output
+        assert "无法区分问方/答方" in result.output
+
+    def test_missing_models_tells_user_what_to_run(self, monkeypatch, tmp_path):
+        from finminutes.core import diarization as dz
+
+        audio = tmp_path / "a.wav"
+        audio.write_bytes(b"x")
+        monkeypatch.setattr(dz, "available", lambda: True)
+        monkeypatch.setattr(dz, "models_ready", lambda: False)
+        result = CliRunner().invoke(main, ["diarize", "-a", str(audio)])
+        assert result.exit_code == 1
+        assert "download_diarization_models" in result.output
+
+
+class TestDiarizeCommand:
+    """`finminutes diarize` —— 只验证参数接线与输出格式，不跑真推理（太慢）。"""
+
+    def _fake_turns(self):
+        from finminutes.core.diarization import Turn
+
+        return [Turn(0.0, 60.0, 0), Turn(60.0, 61.0, 1), Turn(61.0, 120.0, 1)]
+
+    def test_writes_turn_list(self, monkeypatch, tmp_path):
+        from finminutes.core import diarization as dz
+
+        audio = tmp_path / "a.wav"
+        audio.write_bytes(b"x")
+        monkeypatch.setattr(dz, "available", lambda: True)
+        monkeypatch.setattr(dz, "models_ready", lambda: True)
+        monkeypatch.setattr(dz, "diarize", lambda *a, **k: self._fake_turns())
+
+        out = tmp_path / "turns.txt"
+        result = CliRunner().invoke(main, ["diarize", "-a", str(audio), "-o", str(out)])
+        assert result.exit_code == 0, result.output
+        # 中间那个 1 秒的 spk1 和后面 61-120s 的 spk1 相邻且同人，会被 coalesce 合成一段
+        assert "2 段发言" in result.output
+        lines = out.read_text(encoding="utf-8").strip().splitlines()
+        assert len(lines) == 2
+        assert "spk0" in lines[0] and "spk1" in lines[1]
+
+    def test_speakers_zero_means_auto(self, monkeypatch, tmp_path):
+        from finminutes.core import diarization as dz
+
+        audio = tmp_path / "a.wav"
+        audio.write_bytes(b"x")
+        seen = {}
+        monkeypatch.setattr(dz, "available", lambda: True)
+        monkeypatch.setattr(dz, "models_ready", lambda: True)
+
+        def fake_diarize(path, num_speakers=2, **k):
+            seen["num"] = num_speakers
+            return self._fake_turns()
+
+        monkeypatch.setattr(dz, "diarize", fake_diarize)
+        result = CliRunner().invoke(
+            main, ["diarize", "-a", str(audio), "-s", "0", "-o", str(tmp_path / "t.txt")]
+        )
+        assert result.exit_code == 0, result.output
+        assert seen["num"] == -1
+
+    def test_warns_on_monologue(self, monkeypatch, tmp_path):
+        from finminutes.core import diarization as dz
+
+        audio = tmp_path / "a.wav"
+        audio.write_bytes(b"x")
+        monkeypatch.setattr(dz, "available", lambda: True)
+        monkeypatch.setattr(dz, "models_ready", lambda: True)
+        monkeypatch.setattr(
+            dz, "diarize", lambda *a, **k: [dz.Turn(0, 289, 0), dz.Turn(289, 301, 1)]
+        )
+        result = CliRunner().invoke(
+            main, ["diarize", "-a", str(audio), "-o", str(tmp_path / "t.txt")]
+        )
+        assert result.exit_code == 0, result.output
+        assert "无法区分问方/答方" in result.output
+
+    def test_missing_models_tells_user_what_to_run(self, monkeypatch, tmp_path):
+        from finminutes.core import diarization as dz
+
+        audio = tmp_path / "a.wav"
+        audio.write_bytes(b"x")
+        monkeypatch.setattr(dz, "available", lambda: True)
+        monkeypatch.setattr(dz, "models_ready", lambda: False)
+        result = CliRunner().invoke(main, ["diarize", "-a", str(audio)])
+        assert result.exit_code == 1
+        assert "download_diarization_models" in result.output
+
+
+class TestTranscribeWithSpeakers:
+    """`transcribe -s N` 的接线与降级路径。不跑真 ASR/推理，只验分支。"""
+
+    def _client(self, segments=None, exc=None):
+        client = MagicMock()
+        client.transcribe.return_value = "纯文本兜底"
+        if exc is not None:
+            client.transcribe_segments.side_effect = exc
+        else:
+            client.transcribe_segments.return_value = segments or []
+        return client
+
+    def test_falls_back_when_diarization_unavailable(self, monkeypatch):
+        from finminutes.cli import _transcribe_with_speakers
+        from finminutes.core import diarization as dz
+
+        monkeypatch.setattr(dz, "available", lambda: False)
+        client = self._client()
+        out = _transcribe_with_speakers(client, "a.mp3", 2, None, None)
+        assert out == "纯文本兜底"
+        client.transcribe.assert_called_once()
+
+    def test_falls_back_when_asr_has_no_timestamps(self, monkeypatch):
+        """ASR 不支持 verbose_json 时必须退回纯文本，而不是让整次转写失败。"""
+        from finminutes.cli import _transcribe_with_speakers
+        from finminutes.core import diarization as dz
+        from finminutes.core.asr_client import TimestampUnsupportedError
+
+        monkeypatch.setattr(dz, "available", lambda: True)
+        monkeypatch.setattr(dz, "models_ready", lambda: True)
+        client = self._client(exc=TimestampUnsupportedError("没有分段"))
+        out = _transcribe_with_speakers(client, "a.mp3", 2, None, None)
+        assert out == "纯文本兜底"
+
+    def test_produces_labeled_transcript(self, monkeypatch):
+        from finminutes.cli import _transcribe_with_speakers
+        from finminutes.core import diarization as dz
+        from finminutes.core.asr_client import Segment
+
+        monkeypatch.setattr(dz, "available", lambda: True)
+        monkeypatch.setattr(dz, "models_ready", lambda: True)
+        monkeypatch.setattr(dz, "diarize", lambda *a, **k: [dz.Turn(0, 50, 0), dz.Turn(50, 100, 1)])
+
+        client = self._client(
+            segments=[Segment(0, 20, "我们做滤波器。"), Segment(60, 80, "扩产要多少钱？")]
+        )
+        out = _transcribe_with_speakers(client, "a.mp3", 2, None, None)
+        assert out == "说话人0:\n我们做滤波器。\n\n说话人1:\n扩产要多少钱？"
+        client.transcribe.assert_not_called()
+
+    def test_passes_speaker_count_through(self, monkeypatch):
+        from finminutes.cli import _transcribe_with_speakers
+        from finminutes.core import diarization as dz
+        from finminutes.core.asr_client import Segment
+
+        seen = {}
+        monkeypatch.setattr(dz, "available", lambda: True)
+        monkeypatch.setattr(dz, "models_ready", lambda: True)
+        monkeypatch.setattr(
+            dz, "diarize", lambda path, num_speakers=2, **k: seen.update(n=num_speakers) or []
+        )
+        _transcribe_with_speakers(self._client(segments=[Segment(0, 1, "x")]), "a.mp3", 3, None, None)
+        assert seen["n"] == 3
+
+
+class TestTranscribeWithSpeakers:
+    """`transcribe -s N` 的接线与降级路径。不跑真 ASR/推理，只验分支。"""
+
+    def _client(self, segments=None, exc=None):
+        client = MagicMock()
+        client.transcribe.return_value = "纯文本兜底"
+        if exc is not None:
+            client.transcribe_segments.side_effect = exc
+        else:
+            client.transcribe_segments.return_value = segments or []
+        return client
+
+    def test_falls_back_when_diarization_unavailable(self, monkeypatch):
+        from finminutes.cli import _transcribe_with_speakers
+        from finminutes.core import diarization as dz
+
+        monkeypatch.setattr(dz, "available", lambda: False)
+        client = self._client()
+        out = _transcribe_with_speakers(client, "a.mp3", 2, None, None)
+        assert out == "纯文本兜底"
+        client.transcribe.assert_called_once()
+
+    def test_falls_back_when_asr_has_no_timestamps(self, monkeypatch):
+        """ASR 不支持 verbose_json 时必须退回纯文本，而不是让整次转写失败。"""
+        from finminutes.cli import _transcribe_with_speakers
+        from finminutes.core import diarization as dz
+        from finminutes.core.asr_client import TimestampUnsupportedError
+
+        monkeypatch.setattr(dz, "available", lambda: True)
+        monkeypatch.setattr(dz, "models_ready", lambda: True)
+        client = self._client(exc=TimestampUnsupportedError("没有分段"))
+        out = _transcribe_with_speakers(client, "a.mp3", 2, None, None)
+        assert out == "纯文本兜底"
+
+    def test_produces_labeled_transcript(self, monkeypatch):
+        from finminutes.cli import _transcribe_with_speakers
+        from finminutes.core import diarization as dz
+        from finminutes.core.asr_client import Segment
+
+        monkeypatch.setattr(dz, "available", lambda: True)
+        monkeypatch.setattr(dz, "models_ready", lambda: True)
+        monkeypatch.setattr(dz, "diarize", lambda *a, **k: [dz.Turn(0, 50, 0), dz.Turn(50, 100, 1)])
+
+        client = self._client(
+            segments=[Segment(0, 20, "我们做滤波器。"), Segment(60, 80, "扩产要多少钱？")]
+        )
+        out = _transcribe_with_speakers(client, "a.mp3", 2, None, None)
+        assert out == "说话人0:\n我们做滤波器。\n\n说话人1:\n扩产要多少钱？"
+        client.transcribe.assert_not_called()
+
+    def test_passes_speaker_count_through(self, monkeypatch):
+        from finminutes.cli import _transcribe_with_speakers
+        from finminutes.core import diarization as dz
+        from finminutes.core.asr_client import Segment
+
+        seen = {}
+        monkeypatch.setattr(dz, "available", lambda: True)
+        monkeypatch.setattr(dz, "models_ready", lambda: True)
+        monkeypatch.setattr(
+            dz, "diarize", lambda path, num_speakers=2, **k: seen.update(n=num_speakers) or []
+        )
+        _transcribe_with_speakers(self._client(segments=[Segment(0, 1, "x")]), "a.mp3", 3, None, None)
+        assert seen["n"] == 3
+
+
+class TestCallEstimate:
+    """调用数估算必须和 pipeline 的真实调用结构一致，否则配额预警会失灵。"""
+
+    def _text(self, minutes, density=290):
+        return "字" * (minutes * density)
+
+    def test_qa_mode_counts_only_qa_chunks(self):
+        from finminutes.cli import _estimate_calls
+
+        assert _estimate_calls(self._text(60), fmt="qa", qa_chunk_size=8000,
+                               rewrite_chunk_size=4000) == 3
+
+    def test_speech_mode_counts_only_rewrite_chunks(self):
+        from finminutes.cli import _estimate_calls
+
+        assert _estimate_calls(self._text(60), fmt="speech", qa_chunk_size=8000,
+                               rewrite_chunk_size=4000) == 5
+
+    def test_both_mode_adds_qa_on_top_of_rewrite(self):
+        """both 两段都跑。旧版只算改写，1 小时报 6 次而实际 8 次。"""
+        from finminutes.cli import _estimate_calls
+
+        rewrite = _estimate_calls(self._text(60), fmt="speech",
+                                  qa_chunk_size=8000, rewrite_chunk_size=4000)
+        both = _estimate_calls(self._text(60), fmt="both",
+                               qa_chunk_size=8000, rewrite_chunk_size=4000)
+        qa = _estimate_calls(self._text(60), fmt="qa",
+                             qa_chunk_size=8000, rewrite_chunk_size=4000)
+        assert both == rewrite + qa == 8
+
+    def test_rewrite_estimate_has_no_phantom_summary_call(self):
+        """改写阶段顺带产出主题块，结构化时不再发请求，不该有 +1。"""
+        from finminutes.cli import _estimate_rewrite_calls
+
+        assert _estimate_rewrite_calls(self._text(60), chunk_size=4000) == 5
+
+    def test_both_mode_is_llm_bound_at_eight_meetings_per_day(self):
+        """8 场/天时 both 模式日耗 64 次，已超 50 次上限 → 瓶颈从 ASR 移到 LLM。"""
+        from finminutes.cli import _estimate_calls
+
+        per_meeting = _estimate_calls(self._text(60), fmt="both",
+                                      qa_chunk_size=8000, rewrite_chunk_size=4000)
+        assert per_meeting * 8 > 50
+        assert 50 // per_meeting == 6
+
+
+class TestCallEstimate:
+    """调用数估算必须和 pipeline 的真实调用结构一致，否则配额预警会失灵。"""
+
+    def _text(self, minutes, density=290):
+        return "字" * (minutes * density)
+
+    def test_qa_mode_counts_only_qa_chunks(self):
+        from finminutes.cli import _estimate_calls
+
+        assert _estimate_calls(self._text(60), fmt="qa", qa_chunk_size=8000,
+                               rewrite_chunk_size=4000) == 3
+
+    def test_speech_mode_counts_only_rewrite_chunks(self):
+        from finminutes.cli import _estimate_calls
+
+        assert _estimate_calls(self._text(60), fmt="speech", qa_chunk_size=8000,
+                               rewrite_chunk_size=4000) == 5
+
+    def test_both_mode_adds_qa_on_top_of_rewrite(self):
+        """both 两段都跑。旧版只算改写，1 小时报 6 次而实际 8 次。"""
+        from finminutes.cli import _estimate_calls
+
+        rewrite = _estimate_calls(self._text(60), fmt="speech",
+                                  qa_chunk_size=8000, rewrite_chunk_size=4000)
+        both = _estimate_calls(self._text(60), fmt="both",
+                               qa_chunk_size=8000, rewrite_chunk_size=4000)
+        qa = _estimate_calls(self._text(60), fmt="qa",
+                             qa_chunk_size=8000, rewrite_chunk_size=4000)
+        assert both == rewrite + qa == 8
+
+    def test_rewrite_estimate_has_no_phantom_summary_call(self):
+        """改写阶段顺带产出主题块，结构化时不再发请求，不该有 +1。"""
+        from finminutes.cli import _estimate_rewrite_calls
+
+        assert _estimate_rewrite_calls(self._text(60), chunk_size=4000) == 5
+
+    def test_both_mode_is_llm_bound_at_eight_meetings_per_day(self):
+        """8 场/天时 both 模式日耗 64 次，已超 50 次上限 → 瓶颈从 ASR 移到 LLM。"""
+        from finminutes.cli import _estimate_calls
+
+        per_meeting = _estimate_calls(self._text(60), fmt="both",
+                                      qa_chunk_size=8000, rewrite_chunk_size=4000)
+        assert per_meeting * 8 > 50
+        assert 50 // per_meeting == 6

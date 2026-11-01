@@ -23,6 +23,14 @@ dependencies = [
 [project.scripts]
 finminutes = "finminutes.cli:main"
 
+[project.optional-dependencies]
+# 音近错词检测（term_corrector.scan_phonetic）依赖拼音库；未安装时该能力自动降级为不可用，
+# 精确替换与热词偏置不受影响。
+phonetic = ["pypinyin>=0.50"]
+# 说话人分离（core/diarization）。模型不随包分发，装完依赖后另跑
+# `python docs/tools/download_diarization_models.py` 下载约 33MB 模型。
+diarization = ["sherpa-onnx>=1.10", "numpy>=1.24"]
+
 [tool.setuptools.dynamic]
 version = {attr = "finminutes.__version__"}
 

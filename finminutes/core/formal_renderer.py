@@ -1,8 +1,9 @@
 from finminutes.core.fact_checker import FactCheckReport
 from finminutes.core.models import Template
-from finminutes.core.summarizer import StructuredMinutes, SectionContent
+from finminutes.core.rewriter import RELATIVE_TIME_RULE, format_current_date
+from finminutes.core.summarizer import StructuredMinutes, SectionContent, asker_label, ROLE_LABELS
 
-SYSTEM_PROMPT = """你是一个专业的金融会议纪要精炼专家。
+SYSTEM_PROMPT = f"""你是一个专业的金融会议纪要精炼专家。
 
 你的核心任务：将校验稿中的 Q&A 数据和主题要点（独白内容），转化为书面化、结构化、可直接交付的成品稿。
 
@@ -22,6 +23,7 @@ SYSTEM_PROMPT = """你是一个专业的金融会议纪要精炼专家。
 5. 问答数量守恒：校验稿中有 N 个问答对，成品稿中必须有 N 个
 6. 主题要点守恒：校验稿中每一条主题要点（独白内容块）都必须呈现在成品稿对应章节，不允许丢弃；若模板没有对应章节，归入最相近的章节
 7. 成品稿一律使用简体中文，禁止繁体字
+8. {RELATIVE_TIME_RULE}
 
 
 【凝练 vs 概括（必须区分）】
@@ -70,8 +72,12 @@ def _format_qa_pairs(qa_pairs: list) -> str:
         ts = qa.get("timerange", "")
         q = qa.get("question", "")
         a = qa.get("answer", "")
+        # 有姓名用姓名，没有就用角色（访谈方/项目方）；都没有就不加标签，
+        # 避免给成品稿的 LLM 一个「（未指明）」这种噪音
+        asker = (qa.get("asker") or "").strip() or ROLE_LABELS.get(qa.get("asker_role", ""), "")
+        head = f"Q（{asker}）" if asker else "Q"
         lines.append(f"[{i}] timerange: {ts}")
-        lines.append(f"    Q：{q}")
+        lines.append(f"    {head}：{q}")
         lines.append(f"    A：{a}")
         lines.append("")
     return "\n".join(lines)
@@ -110,7 +116,9 @@ class FormalGenerator:
         points_text = _format_sections(sections) if sections else "（无主题要点，纯对话访谈）"
         sections_text = _format_template_sections(template)
 
-        user_prompt = f"""校验稿中的 Q&A 数据（共 {len(qa_pairs)} 组）：
+        user_prompt = f"""【当前日期】{format_current_date()}
+
+校验稿中的 Q&A 数据（共 {len(qa_pairs)} 组）：
 
 {qa_text}
 校验稿中的主题要点（独白内容，共 {len(sections)} 条）：
@@ -137,7 +145,12 @@ def _build_minutes_from_data(data: dict) -> StructuredMinutes:
         )
     from finminutes.core.summarizer import QAPair
     qa_pairs = [
-        QAPair(question=q.get("question", ""), answer=q.get("answer", ""), asker=q.get("asker", ""))
+        QAPair(
+            question=q.get("question", ""),
+            answer=q.get("answer", ""),
+            asker=q.get("asker", ""),
+            asker_role=q.get("asker_role", ""),
+        )
         for q in data.get("qa_pairs", [])
     ]
     return StructuredMinutes(sections=sections, qa_pairs=qa_pairs)
@@ -218,7 +231,7 @@ class FormalRenderer:
             return ""
         lines = ["---", "", "## Q&A 环节", ""]
         for qa in minutes.qa_pairs:
-            asker = qa.asker or "（未指明）"
+            asker = asker_label(qa.asker, getattr(qa, "asker_role", ""))
             lines.append(f"- **{asker}**：{qa.question}")
             if qa.answer:
                 lines.append(f"  - {qa.answer}")
