@@ -34,3 +34,24 @@ class TestTimerangeFilter:
     def test_normalized_junk_still_filtered(self):
         out = self._render_qa(" 当前 ")
         assert "[当前]" not in out
+
+
+class TestTermReport:
+    """术语纠错报告应追加在校验稿正文之后；无报告时不改变原有结构。"""
+
+    def _minutes(self) -> StructuredMinutes:
+        return StructuredMinutes(
+            sections=[],
+            qa_pairs=[QAPair(question="良率多少？", answer="约九成", asker="", timerange="")],
+        )
+
+    def test_term_report_appended(self):
+        out = ReviewRenderer(self._minutes(), term_report="## 术语纠错\n\n- `热压结合` → **热压键合**").render()
+        assert "## 术语纠错" in out
+        assert "热压键合" in out
+        assert out.index("**Q**") < out.index("## 术语纠错")
+
+    def test_no_term_report_keeps_body(self):
+        out = ReviewRenderer(self._minutes()).render()
+        assert "## 术语纠错" not in out
+        assert "**Q**：良率多少？" in out

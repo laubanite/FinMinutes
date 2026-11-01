@@ -9,6 +9,8 @@ from finminutes.core.preprocessor import Preprocessor
 from finminutes.core.renderer import MarkdownRenderer
 from finminutes.core.rewriter import Rewriter
 from finminutes.core.summarizer import StructuredGenerator, StructuredMinutes
+from finminutes.core.confusion import scan_all
+from finminutes.core.term_corrector import apply_exact
 
 
 class PipelineResult:
@@ -32,6 +34,10 @@ class PipelineResult:
         self.success: bool = True
         self.aborted: bool = False  # True = 关键 LLM 阶段失败，流水线中止，不应产出文件
         self.performance_tier: str = ""
+
+        # 术语纠错（确定性）：term_corrections 已改写进正文，term_suspects 仅告警
+        self.term_corrections: list = []
+        self.term_suspects: list = []
 
     @property
     def summary(self) -> str:
@@ -152,7 +158,13 @@ class Pipeline:
             progress_callback("preprocess")
         try:
             t0 = time.time()
-            result.transcript_cleaned = self._preprocessor.clean(transcript)
+            cleaned = self._preprocessor.clean(transcript)
+            # 术语纠错（确定性，零 LLM）：先做精确替换改写正文，再扫疑似错词只做告警。
+            # 顺序不能反——扫描必须在替换之后，否则已纠正的片段会被重复报成疑似。
+            # scan_all = 混淆集候选（离线预生成，纯字符串匹配）+ 拼音近似（装了 pypinyin 才有）
+            cleaned, result.term_corrections = apply_exact(cleaned, glossary)
+            result.term_suspects = scan_all(cleaned, glossary)
+            result.transcript_cleaned = cleaned
             citation_style = Preprocessor.detect_citation_style(transcript)
             result.elapsed_preprocess = time.time() - t0
         except Exception as e:
@@ -200,6 +212,11 @@ class Pipeline:
                     qa_chunk_size=self._safe_qa_chunk_size(),
                     glossary=glossary,
                     on_progress=_stage_progress("summarize"),
+                    # 背景此前只在 rewrite 阶段注入，qa 模式（默认）不跑 rewrite 时被丢弃；
+                    # 显式传给 QA 提取，保证 -b 在所有 format 下都生效。
+                    background=background,
+                    # 只有 sections 与 QA 同时产出（both 模式）才可能重复。
+                    dedup_qa_with_sections=(build_sections and need_qa),
                 )
                 # 结构化输入一律用清洗后的原文（rewrite 书面化结果不参与，
                 # 主题要点来自 section_blocks 的 type 标注，QA 需要原文问法）

@@ -24,7 +24,13 @@ def _load_review_template() -> dict:
 def _serialize_minutes(minutes: StructuredMinutes) -> dict:
     data = {
         "qa_pairs": [
-            {"question": q.question, "answer": q.answer, "asker": q.asker, "timerange": q.timerange}
+            {
+                "question": q.question,
+                "answer": q.answer,
+                "asker": q.asker,
+                "asker_role": getattr(q, "asker_role", ""),
+                "timerange": q.timerange,
+            }
             for q in minutes.qa_pairs
         ],
     }
@@ -37,11 +43,14 @@ def _serialize_minutes(minutes: StructuredMinutes) -> dict:
 
 
 class ReviewRenderer:
-    def __init__(self, minutes: StructuredMinutes, report: FactCheckReport | None = None, transcript_raw: str = ""):
+    def __init__(self, minutes: StructuredMinutes, report: FactCheckReport | None = None,
+                 transcript_raw: str = "", term_report: str = ""):
         self._minutes = minutes
         self._report = report
         self._transcript_raw = transcript_raw
         self._tmpl = _load_review_template()
+        # 术语纠错报告（markdown 片段）：已自动纠正项 + 疑似音近错词告警
+        self._term_report = term_report
 
     def render(self) -> str:
         front_matter = self._build_front_matter()
@@ -57,6 +66,11 @@ class ReviewRenderer:
         lines = ["", "# 校验稿", ""]
         self._render_sections(lines)
         self._render_qa(lines)
+        if self._term_report:
+            lines.append("---")
+            lines.append("")
+            lines.append(self._term_report)
+            lines.append("")
         return "\n".join(lines).strip()
 
     def _render_sections(self, lines: list):

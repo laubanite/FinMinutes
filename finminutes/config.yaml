@@ -90,6 +90,9 @@ asr_providers:
     chunk_duration_minutes: 10
     overlap_seconds: 5
     max_retries: 3
+    # 热词偏置：把术语表词条拼成 prompt 交给 Whisper 解码器，从源头减少专有名词错字。
+    # 仅 Whisper 系模型支持 prompt 参数；SenseVoice 等非 Whisper 模型请置 false。
+    hotword_prompt: true
 
   siliconflow:
     provider: "siliconflow"
@@ -101,6 +104,7 @@ asr_providers:
     chunk_duration_minutes: 30
     overlap_seconds: 5
     max_retries: 3
+    hotword_prompt: false
 
 logging:
   level: "INFO"

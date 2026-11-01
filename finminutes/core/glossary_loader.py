@@ -64,6 +64,7 @@ class GlossaryLoader:
                     term=item["term"],
                     context=item.get("context", ""),
                     corrections=item.get("corrections", []),
+                    auto_variants=item.get("auto_variants", []) or [],
                 )
             )
         return Glossary(industry=industry, terms=terms)
@@ -71,3 +72,18 @@ class GlossaryLoader:
     @staticmethod
     def _default_dir() -> str:
         return os.path.join(os.path.dirname(__file__), "..", "data", "glossary")
+
+
+def dump_glossary(glossary: Glossary) -> dict:
+    """Glossary 对象序列化为可写 YAML 的 dict（保留 auto_variants 等扩展字段）。"""
+    data: dict = {"industry": glossary.industry, "terms": []}
+    for term in glossary.terms:
+        item: dict = {"term": term.term}
+        if term.context:
+            item["context"] = term.context
+        if term.corrections:
+            item["corrections"] = list(term.corrections)
+        if term.auto_variants:
+            item["auto_variants"] = list(term.auto_variants)
+        data["terms"].append(item)
+    return data
